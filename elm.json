@@ -1,0 +1,35 @@
+{
+    "type": "package",
+    "name": "yujota/elm-makie",
+    "summary": "A pack of monoids in the category of endofunctors",
+    "license": "BSD-3-Clause",
+    "version": "1.0.0",
+    "exposed-modules": [
+        "Makie",
+        "Makie.Annotation",
+        "Makie.Category",
+        "Makie.Data",
+        "Makie.Image",
+        "Makie.Mode",
+        "Makie.Options",
+        "Makie.Project"
+    ],
+    "elm-version": "0.19.0 <= v < 0.20.0",
+    "dependencies": {
+        "elm/browser": "1.0.0 <= v < 2.0.0",
+        "elm/core": "1.0.0 <= v < 2.0.0",
+        "elm/html": "1.0.0 <= v < 2.0.0",
+        "elm/json": "1.0.0 <= v < 2.0.0",
+        "elm/time": "1.0.0 <= v < 2.0.0",
+        "avh4/elm-color": "1.0.0 <= v < 2.0.0",
+        "danyx23/elm-uuid": "2.0.0 <= v < 3.0.0",
+        "elm/http": "2.0.0 <= v < 3.0.0",
+        "elm/random": "1.0.0 <= v < 2.0.0",
+        "ianmackenzie/elm-geometry": "3.0.0 <= v < 4.0.0",
+        "ianmackenzie/elm-units": "2.0.0 <= v < 3.0.0",
+        "joakin/elm-canvas": "4.0.0 <= v < 5.0.0",
+        "mdgriffith/elm-ui": "1.0.0 <= v < 2.0.0",
+        "mpizenberg/elm-pointer-events": "4.0.0 <= v < 5.0.0"
+    },
+    "test-dependencies": {}
+}
