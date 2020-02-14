@@ -46,7 +46,7 @@ manage params msg state =
             manageDesktop params desktopEvent state
 
         MobileMsg mobileEvent ->
-            manageMobile mobileEvent state |> (\s -> ( s, [] ))
+            manageMobile params mobileEvent state
 
 
 
@@ -112,7 +112,6 @@ manageDesktop params desktopEvent state =
                                 |> (\s -> ( s, [] ))
 
                         S.AnnotationMode _ ->
-                            -- TODO ここから実装する 2/12
                             Annotation.eventMove (G.cPoint offsetX offsetY) state
                                 |> (\s -> ( s, [] ))
 
@@ -138,8 +137,8 @@ manageDesktop params desktopEvent state =
                 |> (\s -> ( s, [] ))
 
 
-manageMobile : MobileEventType -> S.State msg -> S.State msg
-manageMobile mobileEvent state =
+manageMobile : S.Params -> MobileEventType -> S.State msg -> ( S.State msg, List M.Query )
+manageMobile params mobileEvent state =
     let
         toPoint ( a, b ) =
             Point2d.pixels a b
@@ -149,6 +148,9 @@ manageMobile mobileEvent state =
 
         updateCameraActions newAction oldState =
             { oldState | cameraActions = newAction :: oldState.cameraActions }
+
+        noQuery s =
+            ( s, [] )
     in
     case state.interaction.touch of
         S.NoTouch ->
@@ -156,7 +158,13 @@ manageMobile mobileEvent state =
                 OnTouchStart event ->
                     case event.changedTouches of
                         [ t ] ->
-                            S.SingleTouch t.identifier (toPoint t.clientPos) |> updateTouch
+                            let
+                                p =
+                                    toPoint t.clientPos
+                            in
+                            S.SingleTouch t.identifier p
+                                |> updateTouch
+                                |> (\s -> ( Annotation.eventStart params p s, [] ))
 
                         [ t1, t2 ] ->
                             S.DoubleTouch
@@ -166,12 +174,13 @@ manageMobile mobileEvent state =
                                 , pointB = t2.clientPos |> toPoint
                                 }
                                 |> updateTouch
+                                |> noQuery
 
                         _ ->
-                            state
+                            ( state, [] )
 
                 _ ->
-                    state
+                    ( state, [] )
 
         S.SingleTouch oldId oldPoint ->
             case mobileEvent of
@@ -179,7 +188,13 @@ manageMobile mobileEvent state =
                     case event.changedTouches of
                         [ t ] ->
                             if t.identifier == oldId then
-                                S.SingleTouch t.identifier (toPoint t.clientPos) |> updateTouch
+                                let
+                                    p =
+                                        toPoint t.clientPos
+                                in
+                                S.SingleTouch t.identifier p
+                                    |> updateTouch
+                                    |> (\s -> ( Annotation.eventStart params p s, [] ))
 
                             else
                                 S.DoubleTouch
@@ -189,6 +204,7 @@ manageMobile mobileEvent state =
                                     , pointB = oldPoint
                                     }
                                     |> updateTouch
+                                    |> noQuery
 
                         [ t1, t2 ] ->
                             S.DoubleTouch
@@ -198,9 +214,10 @@ manageMobile mobileEvent state =
                                 , pointB = t2.clientPos |> toPoint
                                 }
                                 |> updateTouch
+                                |> noQuery
 
                         _ ->
-                            state
+                            ( state, [] )
 
                 OnTouchMove event ->
                     case event.changedTouches of
@@ -218,26 +235,38 @@ manageMobile mobileEvent state =
                                         { dx = Vector2d.xComponent diff, dy = Vector2d.yComponent diff }
                             in
                             if t.identifier == oldId then
-                                S.SingleTouch t.identifier (toPoint t.clientPos)
-                                    |> updateTouch
-                                    |> updateCameraActions action
+                                case state.mode of
+                                    S.BrowseMode ->
+                                        -- MEMO: Camera move
+                                        S.SingleTouch t.identifier (toPoint t.clientPos)
+                                            |> updateTouch
+                                            |> updateCameraActions action
+                                            |> (\s -> ( s, [] ))
+
+                                    S.AnnotationMode _ ->
+                                        S.SingleTouch t.identifier (toPoint t.clientPos)
+                                            |> updateTouch
+                                            |> Annotation.eventMove newPoint
+                                            |> (\s -> ( s, [] ))
 
                             else
-                                state
+                                ( state, [] )
 
                         _ ->
-                            state
+                            ( state, [] )
 
                 OnTouchEnd _ ->
                     updateTouch S.NoTouch
+                        |> Annotation.eventEnd
 
-                OnTouchCancel e ->
-                    manageMobile (OnTouchEnd e) state
+                OnTouchCancel _ ->
+                    updateTouch S.NoTouch
+                        |> (\s -> ( Annotation.eventCancel s, [] ))
 
         S.DoubleTouch old ->
             case mobileEvent of
                 OnTouchStart _ ->
-                    state
+                    ( state, [] )
 
                 OnTouchMove event ->
                     let
@@ -273,7 +302,7 @@ manageMobile mobileEvent state =
                                                 |> Maybe.withDefault (Angle.degrees 0)
                                         }
                                         |> updateTouch
-                                        |> manageMobile (OnTouchMove event)
+                                        |> manageMobile params (OnTouchMove event)
 
                                 False ->
                                     S.ZoomTouch
@@ -285,7 +314,7 @@ manageMobile mobileEvent state =
                                         , baseReductionRate = Camera.getReductionRate state.camera
                                         }
                                         |> updateTouch
-                                        |> manageMobile (OnTouchMove event)
+                                        |> manageMobile params (OnTouchMove event)
                     in
                     case event.changedTouches of
                         [ t ] ->
@@ -300,7 +329,7 @@ manageMobile mobileEvent state =
                                 upgradeTouch (Direction2d.from old.pointB p) Nothing
 
                             else
-                                state
+                                ( state, [] )
 
                         [ t1, t2 ] ->
                             let
@@ -314,43 +343,43 @@ manageMobile mobileEvent state =
                                 upgradeTouch (Direction2d.from old.pointA p2) (Direction2d.from old.pointB p1)
 
                             else
-                                state
+                                ( state, [] )
 
                         _ ->
-                            state
+                            ( state, [] )
 
                 OnTouchEnd event ->
                     case event.changedTouches of
                         [ t ] ->
                             if t.identifier == old.idA then
-                                S.SingleTouch old.idB old.pointB |> updateTouch
+                                S.SingleTouch old.idB old.pointB |> updateTouch |> noQuery
 
                             else if t.identifier == old.idB then
-                                S.SingleTouch old.idA old.pointA |> updateTouch
+                                S.SingleTouch old.idA old.pointA |> updateTouch |> noQuery
 
                             else
-                                state
+                                ( state, [] )
 
                         [ t1, t2 ] ->
                             if t1.identifier == old.idA && t2.identifier == old.idB then
-                                S.NoTouch |> updateTouch
+                                S.NoTouch |> updateTouch |> noQuery
 
                             else if t2.identifier == old.idA && t1.identifier == old.idB then
-                                S.NoTouch |> updateTouch
+                                S.NoTouch |> updateTouch |> noQuery
 
                             else
-                                state
+                                ( state, [] )
 
                         _ ->
-                            state
+                            ( state, [] )
 
                 OnTouchCancel e ->
-                    manageMobile (OnTouchEnd e) state
+                    manageMobile params (OnTouchEnd e) state
 
         S.ZoomTouch old ->
             case mobileEvent of
                 OnTouchStart _ ->
-                    state
+                    ( state, [] )
 
                 OnTouchMove event ->
                     let
@@ -388,7 +417,7 @@ manageMobile mobileEvent state =
                                         , zoomType = Camera.ZoomWithReductionRate newReductionRate
                                         }
                             in
-                            updateTouch newTouch |> updateCameraActions newAction
+                            updateTouch newTouch |> updateCameraActions newAction |> noQuery
                     in
                     case event.changedTouches of
                         [ t ] ->
@@ -403,7 +432,7 @@ manageMobile mobileEvent state =
                                 update old.idA old.idB old.pointA p
 
                             else
-                                state
+                                ( state, [] )
 
                         [ t1, t2 ] ->
                             let
@@ -413,40 +442,40 @@ manageMobile mobileEvent state =
                             update t1.identifier t2.identifier p1 p2
 
                         _ ->
-                            state
+                            ( state, [] )
 
                 OnTouchEnd event ->
                     case event.changedTouches of
                         [ t ] ->
                             if t.identifier == old.idA then
-                                S.SingleTouch old.idB old.pointB |> updateTouch
+                                S.SingleTouch old.idB old.pointB |> updateTouch |> noQuery
 
                             else if t.identifier == old.idB then
-                                S.SingleTouch old.idA old.pointA |> updateTouch
+                                S.SingleTouch old.idA old.pointA |> updateTouch |> noQuery
 
                             else
-                                state
+                                ( state, [] )
 
                         [ t1, t2 ] ->
                             if t1.identifier == old.idA && t2.identifier == old.idB then
-                                S.NoTouch |> updateTouch
+                                S.NoTouch |> updateTouch |> noQuery
 
                             else if t2.identifier == old.idA && t1.identifier == old.idB then
-                                S.NoTouch |> updateTouch
+                                S.NoTouch |> updateTouch |> noQuery
 
                             else
-                                state
+                                ( state, [] )
 
                         _ ->
-                            state
+                            ( state, [] )
 
                 OnTouchCancel e ->
-                    manageMobile (OnTouchEnd e) state
+                    manageMobile params (OnTouchEnd e) state
 
         S.RotateAndZoomTouch old ->
             case mobileEvent of
                 OnTouchStart _ ->
-                    state
+                    ( state, [] )
 
                 OnTouchMove event ->
                     let
@@ -512,9 +541,10 @@ manageMobile mobileEvent state =
                                     updateTouch newTouch
                                         |> updateCameraActions zoomAction
                                         |> updateCameraActions rotateAction
+                                        |> noQuery
 
                                 Nothing ->
-                                    updateTouch newTouch |> updateCameraActions zoomAction
+                                    updateTouch newTouch |> updateCameraActions zoomAction |> noQuery
                     in
                     case event.changedTouches of
                         [ t ] ->
@@ -529,7 +559,7 @@ manageMobile mobileEvent state =
                                 update old.idA old.idB old.pointA p
 
                             else
-                                state
+                                ( state, [] )
 
                         [ t1, t2 ] ->
                             let
@@ -544,38 +574,38 @@ manageMobile mobileEvent state =
                                 update t2.identifier t1.identifier p2 p1
 
                             else
-                                state
+                                ( state, [] )
 
                         _ ->
-                            state
+                            ( state, [] )
 
                 OnTouchEnd event ->
                     case event.changedTouches of
                         [ t ] ->
                             if t.identifier == old.idA then
-                                S.SingleTouch old.idB old.pointB |> updateTouch
+                                S.SingleTouch old.idB old.pointB |> updateTouch |> noQuery
 
                             else if t.identifier == old.idB then
-                                S.SingleTouch old.idA old.pointA |> updateTouch
+                                S.SingleTouch old.idA old.pointA |> updateTouch |> noQuery
 
                             else
-                                state
+                                ( state, [] )
 
                         [ t1, t2 ] ->
                             if t1.identifier == old.idA && t2.identifier == old.idB then
-                                S.NoTouch |> updateTouch
+                                S.NoTouch |> updateTouch |> noQuery
 
                             else if t2.identifier == old.idA && t1.identifier == old.idB then
-                                S.NoTouch |> updateTouch
+                                S.NoTouch |> updateTouch |> noQuery
 
                             else
-                                state
+                                ( state, [] )
 
                         _ ->
-                            state
+                            ( state, [] )
 
                 OnTouchCancel e ->
-                    manageMobile (OnTouchEnd e) state
+                    manageMobile params (OnTouchEnd e) state
 
 
 toBeRotate :
@@ -675,5 +705,18 @@ onWheelEvent lifter =
                 (D.at [ "deltaY" ] D.float)
                 (D.at [ "deltaX" ] D.float)
                 (D.at [ "ctrlKey" ] D.bool)
+
+        customEventDecoder : D.Decoder { message : msg, stopPropagation : Bool, preventDefault : Bool }
+        customEventDecoder =
+            D.map
+                (\m ->
+                    { message = m
+                    , stopPropagation = True
+                    , preventDefault = True
+                    }
+                )
+                (D.map (OnWheelEvent >> DesktopMsg >> lifter)
+                    wheelEventDecoder
+                )
     in
-    Html.Events.on "wheel" (D.map (OnWheelEvent >> DesktopMsg >> lifter) wheelEventDecoder)
+    Html.Events.custom "wheel" customEventDecoder
