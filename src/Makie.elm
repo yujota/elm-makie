@@ -36,7 +36,7 @@ import Canvas.Texture as Texture exposing (Texture)
 import Color
 import Element as UI
 import Html exposing (Attribute, Html)
-import Makie.Data as Data exposing (Data)
+import Makie.DataHandler as Data exposing (Data)
 import Makie.Internal.Annotation as Annotation
 import Makie.Internal.Camera as Camera exposing (Camera)
 import Makie.Internal.Event as Event

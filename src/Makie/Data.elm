@@ -1,135 +1,87 @@
-module Makie.Data exposing
-    ( Data, Status, Query
-    , data, update
-    )
+module Makie.Data exposing (..)
 
-{-| This module provides API related to Data
+import Makie.Data.Internal.Data as D exposing (Annotation, Data, Id, Image, Project)
 
 
-# Types
-
-@docs Data, Status, Query
-
-
-# Constructor
-
-@docs data, update
-
--}
-
-import Dict exposing (Dict)
-import Makie.Annotation exposing (Annotation)
-import Makie.Image exposing (Image)
-import Makie.Internal.Makie as M
-import Makie.Types.Data
-import Random
-import Uuid
-
-
-{-| Data type.
--}
 type alias Data =
-    M.Data
+    Data
 
 
-{-| Status type.
--}
-type alias Status =
-    M.Status
+type alias Project =
+    Project
 
 
-{-| Query type.
--}
-type alias Query =
-    M.Query
+type alias Image =
+    Image
 
 
-{-| Constructor
--}
-data : Int -> Image -> List Annotation -> Data
-data seedValue img ants =
-    let
-        initSeed =
-            Random.initialSeed seedValue
+type alias Annotation =
+    Annotation
 
-        f ant { seed, annotations } =
-            let
-                ( newUuid, newSeed ) =
-                    Random.step Uuid.uuidGenerator seed
 
-                ext (M.Annotation a) =
-                    a
-            in
-            { seed = newSeed, annotations = ( Uuid.toString newUuid, ext ant ) :: annotations }
+type alias Id =
+    Id
 
-        ( s, antDict ) =
-            List.foldr f { seed = initSeed, annotations = [] } ants
-                |> (\r -> ( r.seed, Dict.fromList r.annotations ))
 
-        ( currentStatus, currentSeed ) =
-            Random.step Uuid.uuidGenerator s
-                |> Tuple.mapFirst Uuid.toString
-
-        history =
-            {}
-    in
-    { status = currentStatus
-    , image = img
-    , annotations = antDict
-    , history = history
+data :
+    { project : Project
+    , image : Image
+    , annotations : List { id : Id, category : Id, annotation : Annotation }
     }
-        |> (\d -> M.FancyData { data = d, seed = currentSeed })
+    -> Data
+data =
+    Debug.todo "hoge"
 
 
-{-| Update data by queries
+getProject : Data -> Project
+getProject (D.Data r) =
+    r.project
+
+
+{-| Failed when given project has no category for existing annotation
 -}
-update : List Query -> Data -> Data
-update queries data_ =
-    case data_ of
-        M.FancyData r ->
-            update_ queries { seed = r.seed, data = r.data } |> M.FancyData
-
-        M.CustomData _ ->
-            data_
+setProject : Project -> Data -> Result String Data
+setProject _ (D.Data r) =
+    Err "Failed"
 
 
+getImage : Data -> Image
+getImage (D.Data r) =
+    r.image
 
--- helper functions
+
+setImage : Data -> Image
+setImage (D.Data r) =
+    r.image
 
 
-update_ :
-    List Query
-    -> { seed : Random.Seed, data : Makie.Types.Data.Data }
-    -> { seed : Random.Seed, data : Makie.Types.Data.Data }
-update_ queries r =
-    case List.isEmpty queries of
-        True ->
-            r
+getAnnotations : Data -> List { id : Id, category : Id, annotation : Annotation }
+getAnnotations (D.Data r) =
+    Debug.todo "hoge"
 
-        False ->
-            let
-                f q { seed, annotations } =
-                    case q of
-                        M.Add (M.Annotation ant) ->
-                            let
-                                ( newId, newSeed ) =
-                                    Random.step Uuid.uuidGenerator seed
-                                        |> Tuple.mapFirst Uuid.toString
-                            in
-                            { seed = newSeed, annotations = Dict.insert newId ant r.data.annotations }
 
-                        M.Insert (M.AnnotationId antId) (M.Annotation ant) ->
-                            { seed = seed, annotations = Dict.insert antId ant r.data.annotations }
+{-| Erase existing data
+-}
+setAnnotations : List { id : Id, category : Id, annotation : Annotation } -> Data -> Data
+setAnnotations l (D.Data r) =
+    Debug.todo "hoge"
 
-                        M.Remove (M.AnnotationId antId) ->
-                            { seed = seed, annotations = Dict.remove antId annotations }
 
-                ( s, updated ) =
-                    List.foldr f { seed = r.seed, annotations = r.data.annotations } queries
-                        |> (\x -> ( x.seed, x.annotations ))
+get : Id -> Data -> Maybe { category : Id, annotation : Annotation }
+get i (D.Data r) =
+    Debug.todo "Not implemented"
 
-                ( currentStatus, currentSeed ) =
-                    Random.step Uuid.uuidGenerator s
-                        |> Tuple.mapFirst Uuid.toString
-            in
-            { seed = currentSeed, data = r.data |> (\d -> { d | annotations = updated, status = currentStatus }) }
+
+member : Id -> Data -> Bool
+member i (D.Data r) =
+    Debug.todo "Not implemented"
+
+
+insert : Id -> { category : Id, annotation : Annotation } -> Data -> Data
+insert =
+    Debug.todo "Not implemented"
+
+
+remove : Id -> Data -> Data
+remove =
+    Debug.todo "Not implemented"
