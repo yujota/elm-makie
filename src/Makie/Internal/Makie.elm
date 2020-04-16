@@ -1,59 +1,165 @@
-module Makie.Internal.Makie exposing (..)
+module Makie.Internal.Makie exposing
+    ( Action(..)
+    , Camera(..)
+    , CameraAction(..)
+    , CameraRecord
+    , Event(..)
+    , EventMode(..)
+    , EventStatus(..)
+    , EventStatusRecord
+    , Image(..)
+    , Makie(..)
+    , MakieRecord
+    , PanePoint
+    , PaneSystem
+    , PaneVector
+    , initialEventStatus
+    )
 
-import Makie.Types.Annotation
-import Makie.Types.Data exposing (Image(..))
-import Makie.Types.State as S
-import Random
-
-
-type Makie msg
-    = Makie (S.State msg)
-
-
-type Options
-    = Options S.Options
-
-
-type Data
-    = FancyData { data : Makie.Types.Data.Data, seed : Random.Seed }
-    | CustomData Makie.Types.Data.Data
-
-
-getData : Data -> Makie.Types.Data.Data
-getData d =
-    case d of
-        FancyData { data } ->
-            data
-
-        CustomData data ->
-            data
+import Angle exposing (Angle)
+import Canvas.Texture exposing (Texture)
+import Html.Events.Extra.Pointer as Pointer
+import Pixels exposing (Pixels)
+import Point2d exposing (Point2d)
+import Quantity exposing (Quantity, Rate)
+import Time exposing (Posix)
+import Vector2d exposing (Vector2d)
 
 
-type Query
-    = Add Annotation
-    | Insert AnnotationId Annotation
-    | Remove AnnotationId
+type Makie
+    = Makie MakieRecord
 
 
-type Status
-    = Status String
+type alias MakieRecord =
+    { eventStatus : EventStatus
+    , image : Image
+    , paneWidth : Int
+    , paneHeight : Int
+    }
 
 
-type Annotation
-    = Annotation Makie.Types.Annotation.Annotation
+type Image
+    = Image { src : String, name : String, width : Int, height : Int }
 
 
-type AnnotationId
-    = AnnotationId String
+
+-- Events
 
 
-type CategoryId
-    = CategoryId String
+type Event
+    = PointerEvent PointerEventSpec
+    | RefreshPane Posix
+    | CanvasTextureLoaded Texture
 
 
-type Category
-    = Category Makie.Types.Annotation.Category
+type PointerEventSpec
+    = OnDown Pointer.Event
+    | OnMove Pointer.Event
+    | OnUp Pointer.Event
+    | OnCancel Pointer.Event
+    | OnOut Pointer.Event
+    | OnLeave Pointer.Event
 
 
-type Project
-    = Project Makie.Types.Annotation.Project
+type EventStatus
+    = EventStatus EventStatusRecord
+
+
+type alias EventStatusRecord =
+    { mode : EventMode }
+
+
+type EventMode
+    = ZeroPointer
+    | OnePointer Pointer.Event
+    | TwoPointer { id1 : Int, id2 : Int, history1 : List ( Float, Float ), history2 : List ( Float, Float ) }
+    | ZoomPointer
+    | RotatePointer
+
+
+initialEventStatus : EventStatus
+initialEventStatus =
+    EventStatus { mode = ZeroPointer }
+
+
+
+-- Actions
+
+
+type Action
+    = CameraActionVariant CameraAction
+    | AnnotationAction
+    | NoAction
+
+
+
+-- Camera
+
+
+type Camera
+    = Camera {}
+
+
+type alias CameraRecord =
+    { x : Float, y : Float }
+
+
+type CameraAction
+    = Move MoveSpec
+    | Zoom ZoomPoint ZoomMagnification
+    | Resize { width : PanePixels, height : PanePixels }
+    | Rotate RotationPoint RotationSpec
+
+
+type MoveSpec
+    = MoveByPaneVector PaneVector
+
+
+type ZoomPoint
+    = ZoomByPanePoint PanePoint
+
+
+type ZoomMagnification
+    = ZoomRatio Float
+    | ZoomTo Float
+
+
+type RotationPoint
+    = RotateByPanePoint PanePoint
+
+
+type RotationSpec
+    = RelativeAngle Angle
+    | AbsoluteAngle Angle
+
+
+
+-- Geometry
+
+
+type alias PanePixels =
+    Quantity Float Pixels
+
+
+type PaneSystem
+    = PaneSystem
+
+
+type alias PanePoint =
+    Point2d Pixels PaneSystem
+
+
+type alias PaneVector =
+    Vector2d Pixels PaneSystem
+
+
+type LevelZeroPixels
+    = LevelZeroPixels
+
+
+type alias ReductionRateUnit =
+    Rate LevelZeroPixels Pixels
+
+
+type alias ReductionRate =
+    Quantity Float ReductionRateUnit
