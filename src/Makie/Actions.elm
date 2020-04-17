@@ -1,10 +1,6 @@
-module Makie.Actions exposing (Action, none)
+module Makie.Actions exposing (none)
 
-import Makie.Internal.NewMakie as M exposing (Action)
-
-
-type alias Action =
-    Action
+import Makie.Internal.Makie as M exposing (Action)
 
 
 none : Action

@@ -3,25 +3,45 @@ module Makie.Internal.Makie exposing
     , Camera(..)
     , CameraAction(..)
     , CameraRecord
+    , Contents(..)
     , Event(..)
     , EventMode(..)
     , EventStatus(..)
     , EventStatusRecord
     , Image(..)
+    , ImagePoint
+    , ImageSystem
+    , ImageVector
     , Makie(..)
     , MakieRecord
     , PanePoint
     , PaneSystem
     , PaneVector
+    , PointerEvent(..)
+    , SingleImageCanvasContentsRecord
+    , fromPanePoint
+    , fromPaneVector
+    , imagePixels
+    , imagePoint
+    , imageVector
+    , inReductionRate
     , initialEventStatus
+    , panePoint
+    , paneVector
+    , reductionRate
+    , requestRendering
+    , toPanePoint
+    , toPaneVector
     )
 
 import Angle exposing (Angle)
+import Canvas exposing (Renderable)
 import Canvas.Texture exposing (Texture)
+import Frame2d exposing (Frame2d)
 import Html.Events.Extra.Pointer as Pointer
 import Pixels exposing (Pixels)
 import Point2d exposing (Point2d)
-import Quantity exposing (Quantity, Rate)
+import Quantity exposing (Quantity(..), Rate(..))
 import Time exposing (Posix)
 import Vector2d exposing (Vector2d)
 
@@ -31,10 +51,13 @@ type Makie
 
 
 type alias MakieRecord =
-    { eventStatus : EventStatus
-    , image : Image
+    { event : EventStatusRecord
     , paneWidth : Int
     , paneHeight : Int
+    , imageWidth : Int
+    , imageHeight : Int
+    , camera : CameraRecord
+    , contents : Contents
     }
 
 
@@ -42,17 +65,21 @@ type Image
     = Image { src : String, name : String, width : Int, height : Int }
 
 
+type Contents
+    = SingleImageCanvasContents SingleImageCanvasContentsRecord
+
+
 
 -- Events
 
 
 type Event
-    = PointerEvent PointerEventSpec
+    = PointerEventVariant PointerEvent
     | RefreshPane Posix
-    | CanvasTextureLoaded Texture
+    | SingleImageCanvasTextureLoaded (Maybe Texture)
 
 
-type PointerEventSpec
+type PointerEvent
     = OnDown Pointer.Event
     | OnMove Pointer.Event
     | OnUp Pointer.Event
@@ -77,9 +104,9 @@ type EventMode
     | RotatePointer
 
 
-initialEventStatus : EventStatus
+initialEventStatus : EventStatusRecord
 initialEventStatus =
-    EventStatus { mode = ZeroPointer }
+    { mode = ZeroPointer }
 
 
 
@@ -88,7 +115,7 @@ initialEventStatus =
 
 type Action
     = CameraActionVariant CameraAction
-    | AnnotationAction
+    | AnnotationActionVariant AnnotationAction
     | NoAction
 
 
@@ -97,22 +124,20 @@ type Action
 
 
 type Camera
-    = Camera {}
+    = Camera CameraRecord
 
 
 type alias CameraRecord =
-    { x : Float, y : Float }
+    { imageFrame : ImageFrame
+    , reductionRate : ReductionRate
+    }
 
 
 type CameraAction
-    = Move MoveSpec
+    = Move PaneVector
     | Zoom ZoomPoint ZoomMagnification
     | Resize { width : PanePixels, height : PanePixels }
     | Rotate RotationPoint RotationSpec
-
-
-type MoveSpec
-    = MoveByPaneVector PaneVector
 
 
 type ZoomPoint
@@ -134,15 +159,70 @@ type RotationSpec
 
 
 
+-- Annotation
+
+
+type AnnotationAction
+    = No
+
+
+
+-- View
+-- Canvas
+
+
+type alias SingleImageCanvasContentsRecord =
+    { texture : Maybe Texture
+    , src : String
+    , renderables : List Renderable
+    , isRenderingRequested : Bool
+    }
+
+
+requestRendering : Makie -> Makie
+requestRendering m =
+    m
+
+
+
 -- Geometry
+-- PathologySystem
 
 
-type alias PanePixels =
-    Quantity Float Pixels
+type ImageSystem
+    = ImageSystem
+
+
+type ImageSystemPixels
+    = PathologySystemPixels
+
+
+type alias ImagePixels =
+    Quantity Float ImageSystemPixels
+
+
+type alias ImagePoint =
+    Point2d ImageSystemPixels ImageSystem
+
+
+type alias ImageVector =
+    Vector2d ImageSystemPixels ImageSystem
+
+
+type alias ImageFrame =
+    Frame2d Pixels PaneSystem { defines : ImageSystem }
+
+
+
+-- Pane System
 
 
 type PaneSystem
     = PaneSystem
+
+
+type alias PanePixels =
+    Quantity Float Pixels
 
 
 type alias PanePoint =
@@ -153,13 +233,76 @@ type alias PaneVector =
     Vector2d Pixels PaneSystem
 
 
-type LevelZeroPixels
-    = LevelZeroPixels
+
+-- Rate
 
 
 type alias ReductionRateUnit =
-    Rate LevelZeroPixels Pixels
+    Rate ImageSystemPixels Pixels
 
 
 type alias ReductionRate =
     Quantity Float ReductionRateUnit
+
+
+
+-- Helper functions for geometric types
+
+
+imagePixels : number -> Quantity number ImageSystemPixels
+imagePixels n =
+    Quantity n
+
+
+imagePoint : { x : Float, y : Float } -> ImagePoint
+imagePoint r =
+    Point2d.xy (imagePixels r.x) (imagePixels r.y)
+
+
+imageVector : { dx : Float, dy : Float } -> ImageVector
+imageVector r =
+    Vector2d.xy (imagePixels r.dx) (imagePixels r.dy)
+
+
+panePoint : { x : Float, y : Float } -> PanePoint
+panePoint r =
+    Point2d.pixels r.x r.y
+
+
+paneVector : { dx : Float, dy : Float } -> PaneVector
+paneVector r =
+    Vector2d.pixels r.dx r.dy
+
+
+toPanePoint : ReductionRate -> ImageFrame -> ImagePoint -> PanePoint
+toPanePoint rRate iFrame iPoint =
+    -- TODO: Need to be tested
+    iPoint |> Point2d.at_ rRate |> Point2d.placeIn iFrame
+
+
+fromPanePoint : ReductionRate -> ImageFrame -> PanePoint -> ImagePoint
+fromPanePoint rRate iFrame pPoint =
+    -- TODO: Need to be tested
+    pPoint |> Point2d.relativeTo iFrame |> Point2d.at rRate
+
+
+toPaneVector : ReductionRate -> ImageFrame -> ImageVector -> PaneVector
+toPaneVector rRate pFrame iVector =
+    -- TODO: Need to be tested
+    iVector |> Vector2d.at_ rRate |> Vector2d.placeIn pFrame
+
+
+fromPaneVector : ReductionRate -> ImageFrame -> PaneVector -> ImageVector
+fromPaneVector rRate pFrame pVector =
+    -- TODO: Need to be tested
+    pVector |> Vector2d.relativeTo pFrame |> Vector2d.at rRate
+
+
+reductionRate : Float -> Quantity Float ReductionRateUnit
+reductionRate n =
+    Quantity n
+
+
+inReductionRate : Quantity Float ReductionRateUnit -> Float
+inReductionRate (Quantity n) =
+    n

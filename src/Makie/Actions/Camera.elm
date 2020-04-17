@@ -1,8 +1,8 @@
 module Makie.Actions.Camera exposing (move)
 
-import Makie.Internal.NewMakie as M exposing (Action)
+import Makie.Internal.Makie as M exposing (Action)
 
 
 move : { dx : Float, dy : Float } -> Action
 move =
-    Debug.todo "hoge"
+    Debug.todo "todo"

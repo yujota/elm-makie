@@ -11,7 +11,7 @@ main =
 
 init : () -> ( Makie, Cmd Msg )
 init _ =
-    ( Makie.init { name = "sample", width = 3456, height = 5184, src = imageSrc }, Cmd.none )
+    ( Makie.makie { name = "sample", width = 3456, height = 5184, src = imageSrc }, Cmd.none )
 
 
 type Msg
