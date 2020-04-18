@@ -1,7 +1,8 @@
-module Makie.Internal.Events exposing (handlePointerEvent)
+module Makie.Internal.Events exposing (handlePointerEvent, handleWheelEvent)
 
 import Html.Events.Extra.Pointer as Pointer
 import Makie.Internal.Makie as M
+import Quantity
 
 
 handlePointerEvent : M.PointerEvent -> M.EventStatusRecord -> ( M.EventStatusRecord, M.Action )
@@ -15,6 +16,25 @@ handlePointerEvent ev r =
 
         _ ->
             ( r, M.NoAction )
+
+
+handleWheelEvent : M.CameraRecord -> M.WheelEvent -> M.EventStatusRecord -> ( M.EventStatusRecord, M.Action )
+handleWheelEvent camera (M.OnWheel ev) r =
+    let
+        zoomRatio =
+            if ev.deltaY < 0 then
+                2
+
+            else
+                0.5
+
+        newReductionRate =
+            Quantity.multiplyBy zoomRatio camera.reductionRate
+
+        zoomPoint =
+            ev.mouseEvent |> .offsetPos |> (\( x, y ) -> M.panePoint { x = x, y = y })
+    in
+    ( r, M.Zoom zoomPoint newReductionRate |> M.CameraActionVariant )
 
 
 

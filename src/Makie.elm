@@ -63,6 +63,10 @@ handle e ((M.Makie r) as m) =
             Makie.Internal.Events.handlePointerEvent pointerEvent r.event
                 |> Tuple.mapFirst (\ev -> M.Makie { r | event = ev })
 
+        M.WheelEventVariant wheelEvent ->
+            Makie.Internal.Events.handleWheelEvent r.camera wheelEvent r.event
+                |> Tuple.mapFirst (\ev -> M.Makie { r | event = ev })
+
         M.RefreshPane posix ->
             case r.contents of
                 M.SingleImageCanvasContents c ->
@@ -129,7 +133,7 @@ view : (Event -> msg) -> Makie -> Html msg
 view toMessage ((M.Makie r) as m) =
     Canvas.toHtmlWith
         { width = paneWidth m, height = paneHeight m, textures = Makie.Canvas.textures m toMessage }
-        (List.map (Html.Attributes.map toMessage) Makie.Events.onPointerOperations)
+        (List.map (Html.Attributes.map toMessage) (Makie.Events.onPointerEvents ++ Makie.Events.onWheelEvents))
         (Makie.Canvas.renderables m)
 
 

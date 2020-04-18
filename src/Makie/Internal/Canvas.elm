@@ -10,6 +10,7 @@ import Canvas.Texture exposing (Texture)
 import Makie.Internal.Makie as M
 import Pixels
 import Point2d
+import Quantity
 
 
 
@@ -51,8 +52,11 @@ renderSingleImageCanvas { camera } c =
                     Point2d.origin
                         |> M.toPanePoint camera.reductionRate camera.imageFrame
                         |> Point2d.toTuple Pixels.inPixels
+
+                scale =
+                    Quantity.ratio camera.reductionRate (M.reductionRate 1)
             in
-            Canvas.texture [ CAdvanced.transform [ CAdvanced.translate x y ] ] ( 0, 0 ) t
+            Canvas.texture [ CAdvanced.transform [ CAdvanced.translate x y, CAdvanced.scale scale scale ] ] ( 0, 0 ) t
                 |> (\rnd -> { c | renderables = [ rnd ] })
 
         Nothing ->

@@ -18,7 +18,9 @@ module Makie.Internal.Makie exposing
     , PaneSystem
     , PaneVector
     , PointerEvent(..)
+    , ReductionRate
     , SingleImageCanvasContentsRecord
+    , WheelEvent(..)
     , fromPanePoint
     , fromPaneVector
     , imagePixels
@@ -39,6 +41,7 @@ import Canvas exposing (Renderable)
 import Canvas.Texture exposing (Texture)
 import Frame2d exposing (Frame2d)
 import Html.Events.Extra.Pointer as Pointer
+import Html.Events.Extra.Wheel as Wheel
 import Pixels exposing (Pixels)
 import Point2d exposing (Point2d)
 import Quantity exposing (Quantity(..), Rate(..))
@@ -75,6 +78,7 @@ type Contents
 
 type Event
     = PointerEventVariant PointerEvent
+    | WheelEventVariant WheelEvent
     | RefreshPane Posix
     | SingleImageCanvasTextureLoaded (Maybe Texture)
 
@@ -86,6 +90,10 @@ type PointerEvent
     | OnCancel Pointer.Event
     | OnOut Pointer.Event
     | OnLeave Pointer.Event
+
+
+type WheelEvent
+    = OnWheel Wheel.Event
 
 
 type EventStatus
@@ -135,7 +143,7 @@ type alias CameraRecord =
 
 type CameraAction
     = Move PaneVector
-    | Zoom ZoomPoint ZoomMagnification
+    | Zoom PanePoint ReductionRate
     | Resize { width : PanePixels, height : PanePixels }
     | Rotate RotationPoint RotationSpec
 
