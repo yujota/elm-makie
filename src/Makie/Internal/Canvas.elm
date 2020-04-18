@@ -4,6 +4,7 @@ module Makie.Internal.Canvas exposing
     , singleImageCanvasContents
     )
 
+import Angle
 import Canvas
 import Canvas.Settings.Advanced as CAdvanced
 import Canvas.Texture exposing (Texture)
@@ -53,10 +54,21 @@ renderSingleImageCanvas { camera } c =
                         |> M.toPanePoint camera.reductionRate camera.imageFrame
                         |> Point2d.toTuple Pixels.inPixels
 
+                degrees =
+                    camera.angle |> Angle.inRadians
+
                 scale =
                     Quantity.ratio camera.reductionRate (M.reductionRate 1)
             in
-            Canvas.texture [ CAdvanced.transform [ CAdvanced.translate x y, CAdvanced.scale scale scale ] ] ( 0, 0 ) t
+            Canvas.texture
+                [ CAdvanced.transform
+                    [ CAdvanced.translate x y
+                    , CAdvanced.scale scale scale
+                    , CAdvanced.rotate degrees
+                    ]
+                ]
+                ( 0, 0 )
+                t
                 |> (\rnd -> { c | renderables = [ rnd ] })
 
         Nothing ->

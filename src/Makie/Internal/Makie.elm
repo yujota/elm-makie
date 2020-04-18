@@ -107,6 +107,7 @@ type alias EventStatusRecord =
 type EventMode
     = ZeroPointer
     | OnePointer Pointer.Event
+    | OnePointerRotationMode Pointer.Event
     | TwoPointer { id1 : Int, id2 : Int, history1 : List ( Float, Float ), history2 : List ( Float, Float ) }
     | ZoomPointer
     | RotatePointer
@@ -138,32 +139,14 @@ type Camera
 type alias CameraRecord =
     { imageFrame : ImageFrame
     , reductionRate : ReductionRate
+    , angle : Angle
     }
 
 
 type CameraAction
     = Move PaneVector
     | Zoom PanePoint ReductionRate
-    | Resize { width : PanePixels, height : PanePixels }
-    | Rotate RotationPoint RotationSpec
-
-
-type ZoomPoint
-    = ZoomByPanePoint PanePoint
-
-
-type ZoomMagnification
-    = ZoomRatio Float
-    | ZoomTo Float
-
-
-type RotationPoint
-    = RotateByPanePoint PanePoint
-
-
-type RotationSpec
-    = RelativeAngle Angle
-    | AbsoluteAngle Angle
+    | Rotate PanePoint Angle
 
 
 

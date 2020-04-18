@@ -60,7 +60,10 @@ handle : Event -> Makie -> ( Makie, Action )
 handle e ((M.Makie r) as m) =
     case e of
         M.PointerEventVariant pointerEvent ->
-            Makie.Internal.Events.handlePointerEvent pointerEvent r.event
+            Makie.Internal.Events.handlePointerEvent
+                { paneWidth = r.paneWidth, paneHeight = r.paneHeight }
+                pointerEvent
+                r.event
                 |> Tuple.mapFirst (\ev -> M.Makie { r | event = ev })
 
         M.WheelEventVariant wheelEvent ->

@@ -1,18 +1,27 @@
 module Makie.Internal.Events exposing (handlePointerEvent, handleWheelEvent)
 
+import Angle exposing (Angle)
+import Direction2d
 import Html.Events.Extra.Pointer as Pointer
 import Makie.Internal.Makie as M
 import Quantity
 
 
-handlePointerEvent : M.PointerEvent -> M.EventStatusRecord -> ( M.EventStatusRecord, M.Action )
-handlePointerEvent ev r =
+handlePointerEvent :
+    { paneWidth : Int, paneHeight : Int }
+    -> M.PointerEvent
+    -> M.EventStatusRecord
+    -> ( M.EventStatusRecord, M.Action )
+handlePointerEvent { paneWidth, paneHeight } ev r =
     case r.mode of
         M.ZeroPointer ->
             zeroPointAction ev r
 
         M.OnePointer p ->
             onePointAction ev r p
+
+        M.OnePointerRotationMode p ->
+            onePointRotationModeAction { paneWidth = paneWidth, paneHeight = paneHeight } ev r p
 
         _ ->
             ( r, M.NoAction )
@@ -45,7 +54,16 @@ zeroPointAction : M.PointerEvent -> M.EventStatusRecord -> ( M.EventStatusRecord
 zeroPointAction event _ =
     case event of
         M.OnDown e ->
-            ( { mode = M.OnePointer e }, M.NoAction )
+            let
+                isShiftKeyPressed evt =
+                    evt |> .pointer |> .keys |> .shift
+            in
+            case isShiftKeyPressed e of
+                True ->
+                    ( { mode = M.OnePointerRotationMode e }, M.NoAction )
+
+                False ->
+                    ( { mode = M.OnePointer e }, M.NoAction )
 
         _ ->
             ( { mode = M.ZeroPointer }, M.NoAction )
@@ -59,7 +77,7 @@ onePointAction event s p =
 
         M.OnMove e ->
             if e.pointerId == p.pointerId then
-                ( { s | mode = M.OnePointer e }, getDiff p e |> M.paneVector |> M.Move |> M.CameraActionVariant )
+                ( { s | mode = M.OnePointer e }, calcDiff p e |> M.paneVector |> M.Move |> M.CameraActionVariant )
 
             else
                 ( s, M.NoAction )
@@ -93,8 +111,35 @@ onePointAction event s p =
                 ( s, M.NoAction )
 
 
-getDiff : Pointer.Event -> Pointer.Event -> { dx : Float, dy : Float }
-getDiff pointerA pointerB =
+onePointRotationModeAction :
+    { paneWidth : Int, paneHeight : Int }
+    -> M.PointerEvent
+    -> M.EventStatusRecord
+    -> Pointer.Event
+    -> ( M.EventStatusRecord, M.Action )
+onePointRotationModeAction { paneWidth, paneHeight } event s p =
+    case event of
+        M.OnMove e ->
+            if e.pointerId == p.pointerId then
+                let
+                    centerPoint =
+                        M.panePoint { x = toFloat paneWidth / 2, y = toFloat paneHeight / 2 }
+                in
+                ( { s | mode = M.OnePointerRotationMode e }
+                , calcAngle centerPoint p e
+                    |> Maybe.map (\a -> M.Rotate centerPoint a |> M.CameraActionVariant)
+                    |> Maybe.withDefault M.NoAction
+                )
+
+            else
+                ( s, M.NoAction )
+
+        _ ->
+            onePointAction event s p
+
+
+calcDiff : Pointer.Event -> Pointer.Event -> { dx : Float, dy : Float }
+calcDiff pointerA pointerB =
     let
         offsetPos e =
             .offsetPos e.pointer
@@ -102,3 +147,20 @@ getDiff pointerA pointerB =
     ( pointerA, pointerB )
         |> Tuple.mapBoth offsetPos offsetPos
         |> (\( a, b ) -> { dx = Tuple.first b - Tuple.first a, dy = Tuple.second b - Tuple.second a })
+
+
+calcAngle : M.PanePoint -> Pointer.Event -> Pointer.Event -> Maybe Angle
+calcAngle centerPoint pointerA pointerB =
+    let
+        getDirection e =
+            e.pointer
+                |> .offsetPos
+                |> (\( x, y ) -> M.panePoint { x = x, y = y })
+                |> Direction2d.from centerPoint
+    in
+    case ( getDirection pointerA, getDirection pointerB ) of
+        ( Just directionA, Just directionB ) ->
+            Just (Direction2d.angleFrom directionA directionB)
+
+        _ ->
+            Nothing
