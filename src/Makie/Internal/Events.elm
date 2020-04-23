@@ -14,13 +14,13 @@ handlePointerEvent :
     -> ( M.EventStatusRecord, M.Action )
 handlePointerEvent { paneWidth, paneHeight } ev r =
     case r.mode of
-        M.ZeroPointer ->
+        M.NoGesture ->
             zeroPointAction ev r
 
-        M.OnePointer p ->
+        M.SingleTouchGesture p ->
             onePointAction ev r p
 
-        M.OnePointerRotationMode p ->
+        M.RotateByCenterGesture p ->
             onePointRotationModeAction { paneWidth = paneWidth, paneHeight = paneHeight } ev r p
 
         _ ->
@@ -60,13 +60,13 @@ zeroPointAction event _ =
             in
             case isShiftKeyPressed e of
                 True ->
-                    ( { mode = M.OnePointerRotationMode e }, M.NoAction )
+                    ( { mode = M.RotateByCenterGesture e }, M.NoAction )
 
                 False ->
-                    ( { mode = M.OnePointer e }, M.NoAction )
+                    ( { mode = M.SingleTouchGesture e }, M.NoAction )
 
         _ ->
-            ( { mode = M.ZeroPointer }, M.NoAction )
+            ( { mode = M.NoGesture }, M.NoAction )
 
 
 onePointAction : M.PointerEvent -> M.EventStatusRecord -> Pointer.Event -> ( M.EventStatusRecord, M.Action )
@@ -77,35 +77,35 @@ onePointAction event s p =
 
         M.OnMove e ->
             if e.pointerId == p.pointerId then
-                ( { s | mode = M.OnePointer e }, calcDiff p e |> M.paneVector |> M.Move |> M.CameraActionVariant )
+                ( { s | mode = M.SingleTouchGesture e }, calcDiff p e |> M.paneVector |> M.Move |> M.CameraActionVariant )
 
             else
                 ( s, M.NoAction )
 
         M.OnUp e ->
             if e.pointerId == p.pointerId then
-                ( { s | mode = M.ZeroPointer }, M.NoAction )
+                ( { s | mode = M.NoGesture }, M.NoAction )
 
             else
                 ( s, M.NoAction )
 
         M.OnCancel e ->
             if e.pointerId == p.pointerId then
-                ( { s | mode = M.ZeroPointer }, M.NoAction )
+                ( { s | mode = M.NoGesture }, M.NoAction )
 
             else
                 ( s, M.NoAction )
 
         M.OnOut e ->
             if e.pointerId == p.pointerId then
-                ( { s | mode = M.ZeroPointer }, M.NoAction )
+                ( { s | mode = M.NoGesture }, M.NoAction )
 
             else
                 ( s, M.NoAction )
 
         M.OnLeave e ->
             if e.pointerId == p.pointerId then
-                ( { s | mode = M.ZeroPointer }, M.NoAction )
+                ( { s | mode = M.NoGesture }, M.NoAction )
 
             else
                 ( s, M.NoAction )
@@ -125,7 +125,7 @@ onePointRotationModeAction { paneWidth, paneHeight } event s p =
                     centerPoint =
                         M.panePoint { x = toFloat paneWidth / 2, y = toFloat paneHeight / 2 }
                 in
-                ( { s | mode = M.OnePointerRotationMode e }
+                ( { s | mode = M.RotateByCenterGesture e }
                 , calcAngle centerPoint p e
                     |> Maybe.map (\a -> M.Rotate centerPoint a |> M.CameraActionVariant)
                     |> Maybe.withDefault M.NoAction

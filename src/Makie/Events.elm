@@ -3,7 +3,7 @@ module Makie.Events exposing (onPointerEvents, onWheelEvents)
 import Html exposing (Attribute)
 import Html.Events.Extra.Pointer as Pointer
 import Html.Events.Extra.Wheel as Wheel
-import Makie.Internal.Makie as M exposing (Action, EventMode(..), EventStatus)
+import Makie.Internal.Makie as M exposing (Action, EventStatus, Gesture(..))
 
 
 onPointerEvents : List (Attribute M.Event)

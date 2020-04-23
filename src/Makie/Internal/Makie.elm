@@ -1,14 +1,17 @@
 module Makie.Internal.Makie exposing
     ( Action(..)
+    , Annotation(..)
+    , AnnotationContainer
     , Camera(..)
     , CameraAction(..)
     , CameraRecord
     , Contents(..)
     , Event(..)
-    , EventMode(..)
     , EventStatus(..)
     , EventStatusRecord
+    , Gesture(..)
     , Image(..)
+    , ImageBoundingBox
     , ImagePoint
     , ImageSystem
     , ImageVector
@@ -26,6 +29,7 @@ module Makie.Internal.Makie exposing
     , imagePixels
     , imagePoint
     , imageVector
+    , inImagePixels
     , inReductionRate
     , initialEventStatus
     , panePoint
@@ -37,15 +41,21 @@ module Makie.Internal.Makie exposing
     )
 
 import Angle exposing (Angle)
+import Array exposing (Array)
+import BoundingBox2d exposing (BoundingBox2d)
 import Canvas exposing (Renderable)
 import Canvas.Texture exposing (Texture)
+import Color exposing (Color)
+import Dict exposing (Dict)
 import Frame2d exposing (Frame2d)
 import Html.Events.Extra.Pointer as Pointer
 import Html.Events.Extra.Wheel as Wheel
 import Pixels exposing (Pixels)
 import Point2d exposing (Point2d)
 import Quantity exposing (Quantity(..), Rate(..))
+import Set exposing (Set)
 import Time exposing (Posix)
+import Uuid exposing (Uuid)
 import Vector2d exposing (Vector2d)
 
 
@@ -101,13 +111,13 @@ type EventStatus
 
 
 type alias EventStatusRecord =
-    { mode : EventMode }
+    { mode : Gesture }
 
 
-type EventMode
-    = ZeroPointer
-    | OnePointer Pointer.Event
-    | OnePointerRotationMode Pointer.Event
+type Gesture
+    = NoGesture
+    | SingleTouchGesture Pointer.Event
+    | RotateByCenterGesture Pointer.Event
     | TwoPointer { id1 : Int, id2 : Int, history1 : List ( Float, Float ), history2 : List ( Float, Float ) }
     | ZoomPointer
     | RotatePointer
@@ -115,7 +125,7 @@ type EventMode
 
 initialEventStatus : EventStatusRecord
 initialEventStatus =
-    { mode = ZeroPointer }
+    { mode = NoGesture }
 
 
 
@@ -153,8 +163,36 @@ type CameraAction
 -- Annotation
 
 
+type Annotation
+    = PointAnnotation Uuid ImagePoint -- CategoryId, {x, y}
+
+
 type AnnotationAction
-    = No
+    = InsertAnnotation Uuid Annotation
+    | UpdateAnnotation Uuid (Maybe Annotation -> Maybe Annotation)
+    | RemoveAnnotation Uuid
+
+
+type alias AnnotationContainer =
+    { linerQuaternaryTree : Array (Set String) -- Hashtable for (Morton Order -> Annotation Id)
+    , annotations : Dict String { index : Int, annotation : Annotation, boundingBox : ImageBoundingBox }
+    , depth : Int
+    , unitSize : Int
+    }
+
+
+type Category
+    = CategoryRoot (List Category)
+    | CategoryNode Uuid String Color (List Category)
+    | CategoryLeaf Uuid String Color
+
+
+type alias AnnotationOptions =
+    { point : PointAnnotationOptions }
+
+
+type alias PointAnnotationOptions =
+    { radius : Int }
 
 
 
@@ -200,6 +238,10 @@ type alias ImageVector =
     Vector2d ImageSystemPixels ImageSystem
 
 
+type alias ImageBoundingBox =
+    BoundingBox2d ImageSystemPixels ImageSystem
+
+
 type alias ImageFrame =
     Frame2d Pixels PaneSystem { defines : ImageSystem }
 
@@ -243,6 +285,11 @@ type alias ReductionRate =
 imagePixels : number -> Quantity number ImageSystemPixels
 imagePixels n =
     Quantity n
+
+
+inImagePixels : Quantity number ImageSystemPixels -> number
+inImagePixels (Quantity n) =
+    n
 
 
 imagePoint : { x : Float, y : Float } -> ImagePoint
