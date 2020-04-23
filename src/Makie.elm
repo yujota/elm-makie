@@ -2,7 +2,7 @@ module Makie exposing
     ( Event
     , Makie
     , apply
-    , handle
+    , interpret
     , makie
     , paneHeight
     , paneWidth
@@ -56,8 +56,8 @@ makie r =
         }
 
 
-handle : Event -> Makie -> ( Makie, Action )
-handle e ((M.Makie r) as m) =
+interpret : Event -> Makie -> ( Makie, Action )
+interpret e ((M.Makie r) as m) =
     case e of
         M.PointerEventVariant pointerEvent ->
             Makie.Internal.Events.handlePointerEvent
@@ -129,7 +129,7 @@ paneHeight (M.Makie r) =
 
 update : Event -> Makie -> Makie
 update e m =
-    handle e m |> (\( mak, act ) -> apply act mak)
+    interpret e m |> (\( mak, act ) -> apply act mak)
 
 
 view : (Event -> msg) -> Makie -> Html msg

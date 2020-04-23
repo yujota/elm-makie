@@ -1,7 +1,6 @@
 module Makie.Internal.Makie exposing
     ( Action(..)
     , Annotation(..)
-    , AnnotationContainer
     , Camera(..)
     , CameraAction(..)
     , CameraRecord
@@ -12,15 +11,20 @@ module Makie.Internal.Makie exposing
     , Gesture(..)
     , Image(..)
     , ImageBoundingBox
+    , ImagePixels
     , ImagePoint
     , ImageSystem
     , ImageVector
+    , Label
     , Makie(..)
     , MakieRecord
+    , ObjectContainer
     , PanePoint
     , PaneSystem
     , PaneVector
     , PointerEvent(..)
+    , RectangleAnnotationHandle(..)
+    , RectangleAnnotationRecord
     , ReductionRate
     , SingleImageCanvasContentsRecord
     , WheelEvent(..)
@@ -53,6 +57,7 @@ import Html.Events.Extra.Wheel as Wheel
 import Pixels exposing (Pixels)
 import Point2d exposing (Point2d)
 import Quantity exposing (Quantity(..), Rate(..))
+import Rectangle2d exposing (Rectangle2d)
 import Set exposing (Set)
 import Time exposing (Posix)
 import Uuid exposing (Uuid)
@@ -91,6 +96,8 @@ type Event
     | WheelEventVariant WheelEvent
     | RefreshPane Posix
     | SingleImageCanvasTextureLoaded (Maybe Texture)
+    | OpenLabelEdit Uuid
+    | SetMode
 
 
 type PointerEvent
@@ -134,8 +141,27 @@ initialEventStatus =
 
 type Action
     = CameraActionVariant CameraAction
-    | AnnotationActionVariant AnnotationAction
+    | DataActionVariant DataAction
+    | EditActionVariant EditAction
+    | Batch (List Action)
     | NoAction
+
+
+type CameraAction
+    = Move PaneVector
+    | Zoom PanePoint ReductionRate
+    | Rotate PanePoint Angle
+
+
+type DataAction
+    = Insert Uuid Annotation
+    | Remove Uuid
+
+
+type EditAction
+    = Edit Uuid EditingAnnotation -- Warning, Caution などのファンシーな機能?
+    | Finished Uuid
+    | Cancel Uuid
 
 
 
@@ -153,32 +179,63 @@ type alias CameraRecord =
     }
 
 
-type CameraAction
-    = Move PaneVector
-    | Zoom PanePoint ReductionRate
-    | Rotate PanePoint Angle
-
-
 
 -- Annotation
 
 
+{-| internal 以外では使わない
+-}
 type Annotation
-    = PointAnnotation Uuid ImagePoint -- CategoryId, {x, y}
+    = Annotation AnnotationRecord
 
 
-type AnnotationAction
-    = InsertAnnotation Uuid Annotation
-    | UpdateAnnotation Uuid (Maybe Annotation -> Maybe Annotation)
-    | RemoveAnnotation Uuid
+{-| internal 以外では使わない
+-}
+type EditingAnnotation
+    = EditingAnnotation EditingAnnotationRecord
 
 
-type alias AnnotationContainer =
+type alias AnnotationRecord =
+    { label : Label, spec : AnnotationSpec }
+
+
+type AnnotationSpec
+    = PointAnnotation ImagePoint
+    | RectangleAnnotation RectangleAnnotationRecord
+
+
+type alias RectangleAnnotationRecord =
+    { rectangle : ImageRectangle }
+
+
+type alias EditingAnnotationRecord =
+    { label : Maybe Label, status : Maybe EditingStatus, spec : EditingAnnotationSpec }
+
+
+type EditingStatus
+    = Warning
+
+
+type EditingAnnotationSpec
+    = EditingPointAnnotation Uuid ImagePoint -- CategoryId, {x, y}
+    | EditingRectangle RectangleAnnotationHandle
+
+
+type RectangleAnnotationHandle
+    = RectangleMoveHandle { start : ImagePoint, control : ImagePoint, original : ImageRectangle }
+    | RectangleCornerHandle { anchor : ImagePoint, control : ImagePoint }
+
+
+type alias ObjectContainer o =
     { linerQuaternaryTree : Array (Set String) -- Hashtable for (Morton Order -> Annotation Id)
-    , annotations : Dict String { index : Int, annotation : Annotation, boundingBox : ImageBoundingBox }
+    , objects : Dict String { index : Int, object : o, boundingBox : ImageBoundingBox }
     , depth : Int
     , unitSize : Int
     }
+
+
+type Label
+    = CategoryId Uuid
 
 
 type Category
@@ -232,6 +289,10 @@ type alias ImagePixels =
 
 type alias ImagePoint =
     Point2d ImageSystemPixels ImageSystem
+
+
+type alias ImageRectangle =
+    Rectangle2d ImageSystemPixels ImageSystem
 
 
 type alias ImageVector =

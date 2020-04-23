@@ -1,9 +1,9 @@
 module Makie.Internal.AnnotationContainer exposing
-    ( annotationContainer
-    , getIndicesTouched
+    ( getIndicesTouched
     , getLinerQuaternaryTreeIndex
     , getQuadKey
     , insert
+    , objectContainer
     , remove
     , touched
     )
@@ -17,28 +17,28 @@ import Point2d
 import Set exposing (Set)
 
 
-annotationContainer : { depth : Int, unitSize : Int } -> M.AnnotationContainer
-annotationContainer { depth, unitSize } =
+objectContainer : { depth : Int, unitSize : Int } -> M.ObjectContainer o
+objectContainer { depth, unitSize } =
     let
         numIndices =
             (4 ^ depth - 1) // 3
     in
     { linerQuaternaryTree = Array.repeat numIndices Set.empty
-    , annotations = Dict.empty
+    , objects = Dict.empty
     , depth = depth
     , unitSize = unitSize
     }
 
 
-insert : String -> M.ImageBoundingBox -> M.Annotation -> M.AnnotationContainer -> M.AnnotationContainer
-insert key boundingBox annotation container =
+insert : String -> M.ImageBoundingBox -> o -> M.ObjectContainer o -> M.ObjectContainer o
+insert key boundingBox object container =
     let
         newIndex =
             getLinerQuaternaryTreeIndex { depth = container.depth, unitSize = container.unitSize } boundingBox
 
         updateLQTIndex c =
             insertLqtIndex newIndex key <|
-                case Dict.get key container.annotations of
+                case Dict.get key container.objects of
                     Just oldData ->
                         removeLqtIndex oldData.index key c
 
@@ -48,26 +48,26 @@ insert key boundingBox annotation container =
     updateLQTIndex container
         |> (\c ->
                 { c
-                    | annotations =
+                    | objects =
                         Dict.insert key
-                            { index = newIndex, annotation = annotation, boundingBox = boundingBox }
-                            c.annotations
+                            { index = newIndex, object = object, boundingBox = boundingBox }
+                            c.objects
                 }
            )
 
 
-remove : String -> M.AnnotationContainer -> M.AnnotationContainer
+remove : String -> M.ObjectContainer o -> M.ObjectContainer o
 remove key container =
-    case Dict.get key container.annotations of
+    case Dict.get key container.objects of
         Just data ->
-            { container | annotations = Dict.remove key container.annotations }
+            { container | objects = Dict.remove key container.objects }
                 |> removeLqtIndex data.index key
 
         Nothing ->
             container
 
 
-touched : (M.Annotation -> Bool) -> M.ImageBoundingBox -> M.AnnotationContainer -> List M.Annotation
+touched : (o -> Bool) -> M.ImageBoundingBox -> M.ObjectContainer o -> List o
 touched checkInDetail boundingBox container =
     let
         filter a =
@@ -84,7 +84,7 @@ touched checkInDetail boundingBox container =
                 Array.get i container.linerQuaternaryTree
                     |> Maybe.map Set.toList
                     |> Maybe.withDefault []
-                    |> List.filterMap (\n -> Dict.get n container.annotations |> Maybe.andThen (.annotation >> filter))
+                    |> List.filterMap (\n -> Dict.get n container.objects |> Maybe.andThen (.object >> filter))
             )
 
 
@@ -172,7 +172,7 @@ getQuadKey unitSize point =
         |> (\r -> Binary.or r.col r.row)
 
 
-getIndicesTouched : M.ImageBoundingBox -> M.AnnotationContainer -> List Int
+getIndicesTouched : M.ImageBoundingBox -> M.ObjectContainer o -> List Int
 getIndicesTouched boundingBox { unitSize, depth } =
     let
         div i =
@@ -188,7 +188,7 @@ getIndicesTouched boundingBox { unitSize, depth } =
 -- Helper functions
 
 
-insertLqtIndex : Int -> String -> M.AnnotationContainer -> M.AnnotationContainer
+insertLqtIndex : Int -> String -> M.ObjectContainer o -> M.ObjectContainer o
 insertLqtIndex index key container =
     case Array.get index container.linerQuaternaryTree of
         Just s ->
@@ -198,7 +198,7 @@ insertLqtIndex index key container =
             container
 
 
-removeLqtIndex : Int -> String -> M.AnnotationContainer -> M.AnnotationContainer
+removeLqtIndex : Int -> String -> M.ObjectContainer o -> M.ObjectContainer o
 removeLqtIndex index key container =
     case Array.get index container.linerQuaternaryTree of
         Just s ->

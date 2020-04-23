@@ -136,7 +136,7 @@ testGetIndicesTouched =
         testExampleOne () =
             let
                 container =
-                    AC.annotationContainer { depth = 2, unitSize = 100 }
+                    AC.objectContainer { depth = 2, unitSize = 100 }
 
                 boundingBox =
                     BoundingBox2d.from (M.imagePoint { x = 10, y = 20 }) (M.imagePoint { x = 70, y = 80 })
@@ -152,7 +152,7 @@ testGetIndicesTouched =
         testExampleTwo () =
             let
                 container =
-                    AC.annotationContainer { depth = 3, unitSize = 100 }
+                    AC.objectContainer { depth = 3, unitSize = 100 }
 
                 boundingBox =
                     BoundingBox2d.from (M.imagePoint { x = 10, y = 20 }) (M.imagePoint { x = 70, y = 80 })
@@ -168,7 +168,7 @@ testGetIndicesTouched =
         testExampleThree () =
             let
                 container =
-                    AC.annotationContainer { depth = 3, unitSize = 10 }
+                    AC.objectContainer { depth = 3, unitSize = 10 }
 
                 boundingBox =
                     BoundingBox2d.from (M.imagePoint { x = 15, y = 15 }) (M.imagePoint { x = 25, y = 15 })
