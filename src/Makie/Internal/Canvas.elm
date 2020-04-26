@@ -73,3 +73,20 @@ renderSingleImageCanvas { camera } c =
 
         Nothing ->
             c
+
+
+
+-- Annotations
+
+
+renderAnnotation : M.Category -> M.AnnotationRecord -> List Canvas.Renderable
+renderAnnotation category { label, notices, shape } =
+    case shape of
+        M.Point pointShape ->
+            []
+
+        M.Rectangle rectangleShape ->
+            []
+
+        M.Polygon polygonShape ->
+            []

@@ -21,7 +21,9 @@ import Makie.Events
 import Makie.Internal.Camera
 import Makie.Internal.Canvas
 import Makie.Internal.Events
+import Makie.Internal.Gestures
 import Makie.Internal.Makie as M
+import Makie.Internal.ObjectContainer
 import Time exposing (Posix)
 
 
@@ -40,19 +42,24 @@ type alias Action =
 makie : { src : String, width : Int, height : Int, name : String } -> Makie
 makie r =
     M.Makie
-        { eventStatus = M.initialEventStatus
-        , imageWidth = r.width
-        , imageHeight = r.height
-        , paneWidth = 640
-        , paneHeight = 480
-        , camera =
+        { camera =
             Makie.Internal.Camera.camera
                 { imageWidth = r.width
                 , imageHeight = r.height
                 , paneWidth = 640
                 , paneHeight = 480
                 }
+        , target = M.NoTarget
+        , mode = M.BrowseMode
+        , imageWidth = r.width
+        , imageHeight = r.height
+        , paneWidth = 640
+        , paneHeight = 480
+        , annotations = Makie.Internal.ObjectContainer.objectContainer { depth = 4, unitSize = 256 }
+        , gestureModel = Makie.Internal.Gestures.gestureModel
+        , defaultLabel = Nothing
         , contents = Makie.Internal.Canvas.singleImageCanvasContents { src = r.src }
+        , renderedTime = Time.millisToPosix 0
         }
 
 
@@ -63,15 +70,31 @@ interpret e (M.Makie r) =
 
 apply : Action -> Makie -> Makie
 apply a ((M.Makie r) as m) =
-    case Debug.log "action" a of
-        M.CameraActionVariant cameraAction ->
-            Makie.Internal.Camera.apply cameraAction r.camera |> (\c -> M.Makie { r | camera = c })
+    -- case Debug.log "action" a of
+    case a of
+        M.NoAction ->
+            m
 
-        M.AnnotationActionVariant annotationAction ->
+        M.Batch actions ->
             -- TODO
             m
 
-        M.NoAction ->
+        M.Move paneVector ->
+            Makie.Internal.Camera.move paneVector r.camera |> (\c -> M.Makie { r | camera = c })
+
+        M.Zoom panePoint reductionRate ->
+            Makie.Internal.Camera.zoom panePoint reductionRate r.camera |> (\c -> M.Makie { r | camera = c })
+
+        M.Rotate panePoint angle ->
+            Makie.Internal.Camera.rotate panePoint angle r.camera |> (\c -> M.Makie { r | camera = c })
+
+        M.Add annotationRecord ->
+            m
+
+        M.Insert key annotationRecord ->
+            m
+
+        M.Delete key annotationRecord ->
             m
 
 

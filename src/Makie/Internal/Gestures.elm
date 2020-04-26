@@ -1,145 +1,196 @@
-module Makie.Internal.Gestures exposing (toGesture)
+module Makie.Internal.Gestures exposing (clear, gestureModel, update)
 
 import Html.Events.Extra.Pointer as Pointer
 import Makie.Internal.Makie as M
+import Set exposing (Set)
 
 
-toGesture : M.PointerEvent -> M.Gesture -> M.Gesture
-toGesture event gesture =
-    case gesture.status of
-        M.NoGesture ->
-            noGesture event gesture
+gestureModel : M.GestureModel
+gestureModel =
+    { status = M.HandlingNothing
+    , isSpaceKeyPressed = False
+    , isPenDeviceDetected = False
+    }
 
-        M.GestureDetectionSuspended _ ->
-            -- TODO
-            gesture
 
-        M.GestureStart gestureType ->
-            gestureContinues event gestureType gesture
+update : M.PointerEvent -> M.GestureModel -> ( M.GestureModel, M.Gesture )
+update event model =
+    case ( event, model.status ) of
+        ( M.OnDown e, M.HandlingNothing ) ->
+            let
+                panePoint =
+                    offsetPosAsPanePoint e
+            in
+            case e.pointerType of
+                Pointer.MouseType ->
+                    ( { model
+                        | status =
+                            M.HandlingMouse
+                                { pointerId = e.pointerId
+                                , lastPosition = panePoint
+                                , shiftKey = isShiftKeyPressed e
+                                , spaceKey = model.isSpaceKeyPressed
+                                }
+                      }
+                    , M.MouseStart { shiftKey = isShiftKeyPressed e, spaceKey = model.isSpaceKeyPressed } panePoint
+                    )
 
-        M.GestureOngoing gestureType ->
-            gestureContinues event gestureType gesture
+                Pointer.TouchType ->
+                    -- TODO: Implement Multi touch detection
+                    ( { model
+                        | status =
+                            M.HandlingSingleTouch
+                                { pointerId = e.pointerId
+                                , lastPosition = panePoint
+                                , smartStylus = model.isPenDeviceDetected
+                                }
+                      }
+                    , M.SingleTouchStart { smartStylus = model.isPenDeviceDetected } panePoint
+                    )
 
-        M.GestureEnd gestureType ->
-            -- TODO: Consider the case that : double tap -> release one touch -> touch again
-            noGesture event gesture
+                Pointer.PenType ->
+                    ( { model
+                        | status = M.HandlingPen { pointerId = e.pointerId, lastPosition = panePoint }
+                        , isPenDeviceDetected = True
+                      }
+                    , M.PenStart panePoint
+                    )
+
+        ( M.OnDown _, _ ) ->
+            ( model, M.NoGesture )
+
+        ( M.OnMove e, M.HandlingMouse ({ pointerId, lastPosition, shiftKey, spaceKey } as r) ) ->
+            case ( e.pointerType, e.pointerId == pointerId ) of
+                ( Pointer.MouseType, True ) ->
+                    let
+                        panePoint =
+                            offsetPosAsPanePoint e
+
+                        _ =
+                            Debug.log "mouse move" ( lastPosition, panePoint )
+                    in
+                    ( { model | status = M.HandlingMouse { r | lastPosition = panePoint } }
+                    , M.MouseOnGoing { shiftKey = shiftKey, spaceKey = spaceKey } lastPosition panePoint
+                    )
+
+                _ ->
+                    ( model, M.NoGesture )
+
+        ( M.OnMove e, M.HandlingPen ({ pointerId, lastPosition } as r) ) ->
+            case ( e.pointerType, e.pointerId == pointerId ) of
+                ( Pointer.PenType, True ) ->
+                    let
+                        panePoint =
+                            offsetPosAsPanePoint e
+                    in
+                    ( { model | status = M.HandlingPen { r | lastPosition = panePoint } }
+                    , M.PenOnGoing lastPosition panePoint
+                    )
+
+                _ ->
+                    ( model, M.NoGesture )
+
+        ( M.OnMove e, M.HandlingSingleTouch ({ pointerId, lastPosition, smartStylus } as r) ) ->
+            case ( e.pointerType, e.pointerId == pointerId ) of
+                ( Pointer.TouchType, True ) ->
+                    let
+                        panePoint =
+                            offsetPosAsPanePoint e
+                    in
+                    ( { model | status = M.HandlingSingleTouch { r | lastPosition = panePoint } }
+                    , M.SingleTouchOnGoing { smartStylus = smartStylus } lastPosition panePoint
+                    )
+
+                _ ->
+                    ( model, M.NoGesture )
+
+        ( M.OnMove _, _ ) ->
+            ( model, M.NoGesture )
+
+        ( M.OnUp _, M.HandlingNothing ) ->
+            ( model, M.NoGesture )
+
+        ( M.OnUp e, M.Cooling pointerIds ) ->
+            let
+                newPointerIds =
+                    Set.remove e.pointerId pointerIds
+            in
+            if Set.isEmpty newPointerIds then
+                ( { model | status = M.HandlingNothing }, M.NoGesture )
+
+            else
+                ( { model | status = M.Cooling newPointerIds }, M.NoGesture )
+
+        ( M.OnUp e, M.HandlingMouse { pointerId, lastPosition, shiftKey, spaceKey } ) ->
+            case ( e.pointerType, e.pointerId == pointerId ) of
+                ( Pointer.MouseType, True ) ->
+                    let
+                        panePoint =
+                            offsetPosAsPanePoint e
+                    in
+                    ( { model | status = M.HandlingNothing }
+                    , M.MouseEnd { shiftKey = shiftKey, spaceKey = spaceKey } lastPosition panePoint
+                    )
+
+                _ ->
+                    ( model, M.NoGesture )
+
+        ( M.OnUp e, M.HandlingPen { pointerId, lastPosition } ) ->
+            case ( e.pointerType, e.pointerId == pointerId ) of
+                ( Pointer.PenType, True ) ->
+                    let
+                        panePoint =
+                            offsetPosAsPanePoint e
+                    in
+                    ( { model | status = M.HandlingNothing }
+                    , M.PenEnd lastPosition panePoint
+                    )
+
+                _ ->
+                    ( model, M.NoGesture )
+
+        ( M.OnUp e, M.HandlingSingleTouch { pointerId, lastPosition, smartStylus } ) ->
+            case ( e.pointerType, e.pointerId == pointerId ) of
+                ( Pointer.TouchType, True ) ->
+                    let
+                        panePoint =
+                            offsetPosAsPanePoint e
+                    in
+                    ( { model | status = M.HandlingNothing }
+                    , M.SingleTouchEnd { smartStylus = smartStylus } lastPosition panePoint
+                    )
+
+                _ ->
+                    ( model, M.NoGesture )
+
+        ( M.OnCancel e, _ ) ->
+            update (M.OnUp e) model
+
+        ( M.OnOut e, _ ) ->
+            update (M.OnUp e) model
+
+        ( M.OnLeave e, _ ) ->
+            update (M.OnUp e) model
+
+
+clear : M.GestureModel -> M.GestureModel
+clear model =
+    case model.status of
+        M.HandlingMouse { pointerId } ->
+            { model | status = M.Cooling (Set.singleton pointerId) }
+
+        M.HandlingPen { pointerId } ->
+            { model | status = M.Cooling (Set.singleton pointerId) }
+
+        M.HandlingSingleTouch { pointerId } ->
+            { model | status = M.Cooling (Set.singleton pointerId) }
+
+        _ ->
+            model
 
 
 
 -- Helper functions
-
-
-noGesture : M.PointerEvent -> M.Gesture -> M.Gesture
-noGesture event gesture =
-    case event of
-        M.OnDown e ->
-            case e.pointerType of
-                Pointer.MouseType ->
-                    if isShiftKeyPressed e then
-                        { gesture | status = offsetPosAsPanePoint e |> M.MouseMoveWithSiftGesture |> M.GestureStart }
-
-                    else if gesture.isSpaceKeyPressed then
-                        { gesture | status = offsetPosAsPanePoint e |> M.MouseMoveWithSpaceGesture |> M.GestureStart }
-
-                    else
-                        { gesture | status = offsetPosAsPanePoint e |> M.MouseMoveGesture |> M.GestureStart }
-
-                Pointer.TouchType ->
-                    -- TODO: Implement later
-                    gesture
-
-                Pointer.PenType ->
-                    { gesture
-                        | status = offsetPosAsPanePoint e |> M.PenGesture |> M.GestureStart
-                        , penDeviceDetected = True
-                    }
-
-        _ ->
-            gesture
-
-
-gestureContinues : M.PointerEvent -> M.GestureType -> M.Gesture -> M.Gesture
-gestureContinues event gestureType gesture =
-    case event of
-        M.OnDown _ ->
-            gesture
-
-        M.OnMove e ->
-            case gestureType of
-                M.MouseMoveGesture _ ->
-                    { gesture | status = offsetPosAsPanePoint e |> M.MouseMoveGesture |> M.GestureOngoing }
-
-                M.MouseMoveWithSiftGesture _ ->
-                    { gesture | status = offsetPosAsPanePoint e |> M.MouseMoveWithSiftGesture |> M.GestureOngoing }
-
-                M.MouseMoveWithSpaceGesture _ ->
-                    { gesture | status = offsetPosAsPanePoint e |> M.MouseMoveWithSpaceGesture |> M.GestureOngoing }
-
-                M.PenGesture _ ->
-                    { gesture | status = offsetPosAsPanePoint e |> M.PenGesture |> M.GestureOngoing }
-
-                M.SingleTouchGesture pointerId _ ->
-                    if e.pointerId == pointerId then
-                        { gesture
-                            | status =
-                                offsetPosAsPanePoint e
-                                    |> M.SingleTouchGesture pointerId
-                                    |> M.GestureOngoing
-                        }
-
-                    else
-                        gesture
-
-                M.DoubleTouchGesture ->
-                    -- TODO
-                    gesture
-
-                M.PinchCloseGesture ->
-                    -- TODO
-                    gesture
-
-                M.PinchCloseAndRotateGesture ->
-                    -- TODO
-                    gesture
-
-        M.OnUp e ->
-            case gestureType of
-                M.MouseMoveGesture _ ->
-                    { gesture | status = offsetPosAsPanePoint e |> M.MouseMoveGesture |> M.GestureEnd }
-
-                M.MouseMoveWithSiftGesture _ ->
-                    { gesture | status = offsetPosAsPanePoint e |> M.MouseMoveWithSiftGesture |> M.GestureEnd }
-
-                M.MouseMoveWithSpaceGesture _ ->
-                    { gesture | status = offsetPosAsPanePoint e |> M.MouseMoveWithSpaceGesture |> M.GestureEnd }
-
-                M.PenGesture _ ->
-                    { gesture | status = offsetPosAsPanePoint e |> M.PenGesture |> M.GestureEnd }
-
-                M.SingleTouchGesture _ _ ->
-                    -- TODO
-                    gesture
-
-                M.DoubleTouchGesture ->
-                    -- TODO
-                    gesture
-
-                M.PinchCloseGesture ->
-                    -- TODO
-                    gesture
-
-                M.PinchCloseAndRotateGesture ->
-                    -- TODO
-                    gesture
-
-        M.OnCancel e ->
-            gestureContinues (M.OnUp e) gestureType gesture
-
-        M.OnOut e ->
-            gestureContinues (M.OnUp e) gestureType gesture
-
-        M.OnLeave e ->
-            gestureContinues (M.OnUp e) gestureType gesture
 
 
 isShiftKeyPressed : Pointer.Event -> Bool

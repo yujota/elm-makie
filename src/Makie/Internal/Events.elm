@@ -9,6 +9,7 @@ import Makie.Internal.Gestures as Gestures
 import Makie.Internal.Makie as M
 import Pixels
 import Quantity
+import Vector2d
 
 
 interpret : M.Event -> M.MakieRecord -> ( M.MakieRecord, M.Action )
@@ -32,7 +33,7 @@ interpret event ({ camera } as m) =
                 zoomPoint =
                     ev.mouseEvent |> .offsetPos |> (\( x, y ) -> M.panePoint { x = x, y = y })
             in
-            ( m, M.Zoom zoomPoint newReductionRate |> M.CameraActionVariant )
+            ( m, M.Zoom zoomPoint newReductionRate )
 
         M.RefreshPane posix ->
             case m.contents of
@@ -76,109 +77,245 @@ interpret event ({ camera } as m) =
 
 
 interpretPointerEvents : M.PointerEvent -> M.MakieRecord -> ( M.MakieRecord, M.Action )
-interpretPointerEvents event ({ gesture, paneWidth, paneHeight } as m) =
+interpretPointerEvents event ({ gestureModel, paneWidth, paneHeight } as mRecord) =
     let
-        newGesture =
-            Gestures.toGesture event gesture
+        ( newGestureModel, gesture ) =
+            Gestures.update event gestureModel
+
+        _ =
+            Debug.log "gesture & status" ( gesture, newGestureModel )
+
+        m =
+            { mRecord | gestureModel = newGestureModel }
     in
-    Tuple.mapFirst (\r -> { r | gesture = newGesture }) <|
-        case ( gesture.status, newGesture.status ) of
-            ( _, M.GestureStart (M.MouseMoveGesture p) ) ->
-                -- TODO: 4/26 はここから実装
-                ( m, M.NoAction )
+    case gesture of
+        M.NoGesture ->
+            ( m, M.NoAction )
 
-            _ ->
-                ( m, M.NoAction )
+        M.MouseStart r panePoint ->
+            mouseStart r panePoint m
 
+        M.MouseOnGoing r lastPoint panePoint ->
+            mouseOnGoing r lastPoint panePoint m
 
-noGesture : M.PointerEvent -> M.MakieRecord -> ( M.MakieRecord, M.Action )
-noGesture event m =
-    (\r -> ( r, M.NoAction )) <|
-        case event of
-            M.OnDown e ->
-                case e.pointerType of
-                    Pointer.MouseType ->
-                        if isShiftKeyPressed e then
-                            { m | gesture = M.MouseCameraRotateByCenterGesture (offsetPosAsPanePoint e) }
+        M.MouseEnd r lastPoint panePoint ->
+            mouseEnd r lastPoint panePoint m
 
-                        else
-                            noGestureMouseOnDown (offsetPosAsPanePoint e) m
+        M.PenStart panePoint ->
+            ( m, M.NoAction )
 
-                    Pointer.TouchType ->
-                        -- TODO: Implement later
-                        m
+        M.PenOnGoing lastPoint panePoint ->
+            ( m, M.NoAction )
 
-                    Pointer.PenType ->
-                        { m | gesture = M.PenGesture e.pointerId <| offsetPosAsPanePoint e, smartStylus = True }
+        M.PenEnd lastPoint panePoint ->
+            ( m, M.NoAction )
 
-            _ ->
-                m
+        M.SingleTouchStart record panePoint ->
+            ( m, M.NoAction )
+
+        M.SingleTouchOnGoing record lastPoint panePoint ->
+            ( m, M.NoAction )
+
+        M.SingleTouchEnd record lastPoint panePoint ->
+            ( m, M.NoAction )
 
 
-noGestureMouseOnDown : M.PanePoint -> M.MakieRecord -> M.MakieRecord
-noGestureMouseOnDown panePoint ({ camera } as m) =
+mouseStart : { shiftKey : Bool, spaceKey : Bool } -> M.PanePoint -> M.MakieRecord -> ( M.MakieRecord, M.Action )
+mouseStart r panePoint ({ camera } as m) =
+    let
+        startAnnotation f =
+            ( { m
+                | target =
+                    M.TargetCreating
+                        { label = m.defaultLabel
+                        , notices = M.defaultNotices
+                        , handle =
+                            M.fromPanePoint camera.reductionRate camera.imageFrame panePoint |> f
+                        }
+              }
+            , M.NoAction
+            )
+    in
     case m.target of
         M.NoTarget ->
             case getTouchedAnnotation panePoint m of
                 Just ( key, ant ) ->
-                    -- In case, selecting annotations
-                    { m | target = M.TargetSelected key ant }
+                    -- In case, selecting an annotation
+                    ( { m | target = M.TargetSelected key ant, gestureModel = Gestures.clear m.gestureModel }
+                    , M.NoAction
+                    )
 
                 Nothing ->
-                    case m.mode of
-                        M.BrowseMode ->
-                            { m | gesture = M.MouseCameraMoveGesture panePoint }
+                    case ( m.mode, r.spaceKey ) of
+                        ( _, True ) ->
+                            -- When space key is pressed, app behave like browse mode.
+                            ( m, M.NoAction )
 
-                        M.PointMode ->
-                            { m
-                                | gesture = M.MouseAnnotationHandleGesture panePoint
-                                , target =
-                                    M.fromPanePoint camera.reductionRate camera.imageFrame panePoint
-                                        |> Annotations.startPoint
-                                        |> M.TargetCreating
-                            }
+                        ( M.BrowseMode, False ) ->
+                            ( m, M.NoAction )
 
-                        M.RectangleMode ->
-                            { m
-                                | gesture = M.MouseAnnotationHandleGesture panePoint
-                                , target =
-                                    M.fromPanePoint camera.reductionRate camera.imageFrame panePoint
-                                        |> Annotations.startRectangle
-                                        |> M.TargetCreating
-                            }
+                        ( M.PointMode, False ) ->
+                            startAnnotation Annotations.startPoint
 
-                        M.PolygonMode ->
+                        ( M.RectangleMode, False ) ->
+                            startAnnotation Annotations.startRectangle
+
+                        ( M.PolygonMode, False ) ->
                             -- TODO
-                            m
+                            ( m, M.NoAction )
 
-                        M.SelectionRectangleMode ->
+                        ( M.SelectionRectangleMode, False ) ->
                             -- TODO
-                            m
+                            ( m, M.NoAction )
 
         M.TargetCreating _ ->
             -- This case should not be happened.
-            { m | target = M.NoTarget }
+            ( m, M.NoAction )
 
         M.TargetSelected targetId targetAnnotation ->
-            case Annotations.getHandle of
-                _ ->
-                    m
+            case getAnnotationHandle panePoint m targetAnnotation of
+                Just hdl ->
+                    ( { m
+                        | target =
+                            M.TargetEditing targetId
+                                { label = targetAnnotation.label, notices = targetAnnotation.notices, handle = hdl }
+                      }
+                    , M.NoAction
+                    )
+
+                Nothing ->
+                    case getTouchedAnnotation panePoint m of
+                        Just ( key, ant ) ->
+                            -- Change selecting target
+                            ( { m | target = M.TargetSelected key ant, gestureModel = Gestures.clear m.gestureModel }
+                            , M.NoAction
+                            )
+
+                        Nothing ->
+                            -- Unselect target
+                            ( { m | target = M.NoTarget, gestureModel = Gestures.clear m.gestureModel }
+                            , M.NoAction
+                            )
 
         M.TargetEditing targetId targetAnnotation ->
             -- This case should not be happened.
-            { m | target = M.NoTarget }
+            ( m, M.NoAction )
 
 
+mouseOnGoing :
+    { shiftKey : Bool, spaceKey : Bool }
+    -> M.PanePoint
+    -> M.PanePoint
+    -> M.MakieRecord
+    -> ( M.MakieRecord, M.Action )
+mouseOnGoing r lastPoint panePoint ({ camera } as m) =
+    let
+        cameraMove =
+            Vector2d.from lastPoint panePoint |> M.Move
 
-{-
-   case (getTouchedAnnotation panePoint m, m.target) of
-       (Just (key, ant), M.NoTarget) ->
-       (Just (key, ant), M.TargetSelected targetKey targetAnnotaton) ->
--}
+        updateHandle hdl =
+            Annotations.updateHandle (M.fromPanePoint camera.reductionRate camera.imageFrame panePoint) hdl
+    in
+    case m.target of
+        M.NoTarget ->
+            case ( m.mode, r.spaceKey ) of
+                ( _, True ) ->
+                    -- When space key is pressed, app behave like browse mode.
+                    ( m, cameraMove )
+
+                ( M.BrowseMode, False ) ->
+                    if r.shiftKey then
+                        let
+                            centerPoint =
+                                M.panePoint { x = toFloat m.paneWidth / 2, y = toFloat m.paneHeight / 2 }
+                        in
+                        case calcAngle centerPoint lastPoint panePoint of
+                            Just a ->
+                                ( m, M.Rotate centerPoint a )
+
+                            Nothing ->
+                                ( m, M.NoAction )
+
+                    else
+                        ( m, cameraMove )
+
+                _ ->
+                    ( m, M.NoAction )
+
+        M.TargetCreating handleRecord ->
+            ( { m | target = M.TargetCreating { handleRecord | handle = updateHandle handleRecord.handle } }
+            , M.NoAction
+            )
+
+        M.TargetEditing targetId handleRecord ->
+            ( { m | target = M.TargetEditing targetId { handleRecord | handle = updateHandle handleRecord.handle } }
+            , M.NoAction
+            )
+
+        M.TargetSelected _ _ ->
+            -- This case should not be happened.
+            ( m, M.NoAction )
+
+
+mouseEnd :
+    { shiftKey : Bool, spaceKey : Bool }
+    -> M.PanePoint
+    -> M.PanePoint
+    -> M.MakieRecord
+    -> ( M.MakieRecord, M.Action )
+mouseEnd r lastPoint panePoint ({ camera } as m) =
+    let
+        cameraMove =
+            Vector2d.from lastPoint panePoint |> M.Move
+
+        updateHandle hdl =
+            Annotations.updateHandle (M.fromPanePoint camera.reductionRate camera.imageFrame panePoint) hdl
+
+        newAnnotation hRecord =
+            { label = hRecord.label
+            , notices = hRecord.notices
+            , shape = updateHandle hRecord.handle |> Annotations.shapeTo
+            }
+    in
+    case m.target of
+        M.NoTarget ->
+            case ( m.mode, r.spaceKey ) of
+                ( _, True ) ->
+                    -- When space key is pressed, app behave like browse mode.
+                    ( m, cameraMove )
+
+                ( M.BrowseMode, False ) ->
+                    if r.shiftKey then
+                        let
+                            centerPoint =
+                                M.panePoint { x = toFloat m.paneWidth / 2, y = toFloat m.paneHeight / 2 }
+                        in
+                        case calcAngle centerPoint lastPoint panePoint of
+                            Just a ->
+                                ( m, M.Rotate centerPoint a )
+
+                            Nothing ->
+                                ( m, M.NoAction )
+
+                    else
+                        ( m, cameraMove )
+
+                _ ->
+                    ( m, M.NoAction )
+
+        M.TargetCreating handleRecord ->
+            ( { m | target = M.NoTarget }, M.Add (newAnnotation handleRecord) )
+
+        M.TargetEditing targetId handleRecord ->
+            ( { m | target = M.NoTarget }, M.Insert targetId (newAnnotation handleRecord) )
+
+        M.TargetSelected _ _ ->
+            -- This case should not be happened.
+            ( m, M.NoAction )
 
 
 getTouchedAnnotation : M.PanePoint -> M.MakieRecord -> Maybe ( String, M.AnnotationRecord )
-getTouchedAnnotation panePoint ({ camera } as m) =
+getTouchedAnnotation panePoint { camera, annotations } =
     let
         tolerance =
             Pixels.pixels 5 |> Quantity.at camera.reductionRate
@@ -186,20 +323,20 @@ getTouchedAnnotation panePoint ({ camera } as m) =
     Annotations.getTouched
         tolerance
         (M.fromPanePoint camera.reductionRate camera.imageFrame panePoint)
-        m.annotations
+        annotations
 
 
-getAnnotationHandle : M.PanePoint -> M.MakieRecord -> Maybe ( String, M.AnnotationRecord )
-getAnnotationHandle panePoint ({ camera } as m) =
+getAnnotationHandle : M.PanePoint -> M.MakieRecord -> M.AnnotationRecord -> Maybe M.AnnotationHandle
+getAnnotationHandle panePoint { camera } { shape } =
     -- ここからスタート
     let
         tolerance =
             Pixels.pixels 5 |> Quantity.at camera.reductionRate
     in
-    Annotations.getTouched
+    Annotations.getHandle
         tolerance
         (M.fromPanePoint camera.reductionRate camera.imageFrame panePoint)
-        m.annotations
+        shape
 
 
 isShiftKeyPressed : Pointer.Event -> Bool
@@ -210,3 +347,20 @@ isShiftKeyPressed =
 offsetPosAsPanePoint : Pointer.Event -> M.PanePoint
 offsetPosAsPanePoint =
     .pointer >> .offsetPos >> (\( x, y ) -> M.panePoint { x = x, y = y })
+
+
+calcAngle : M.PanePoint -> M.PanePoint -> M.PanePoint -> Maybe Angle
+calcAngle centerPoint pointA pointB =
+    let
+        getDirection e =
+            e.pointer
+                |> .offsetPos
+                |> (\( x, y ) -> M.panePoint { x = x, y = y })
+                |> Direction2d.from centerPoint
+    in
+    case ( Direction2d.from centerPoint pointA, Direction2d.from centerPoint pointB ) of
+        ( Just directionA, Just directionB ) ->
+            Just (Direction2d.angleFrom directionA directionB)
+
+        _ ->
+            Nothing

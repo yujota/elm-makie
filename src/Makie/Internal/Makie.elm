@@ -2,15 +2,16 @@ module Makie.Internal.Makie exposing
     ( Action(..)
     , Annotation(..)
     , AnnotationHandle(..)
+    , AnnotationHandleRecord
     , AnnotationRecord
     , Camera(..)
-    , CameraAction(..)
     , CameraRecord
+    , Category(..)
     , Contents(..)
     , Event(..)
-    , Gesture
-    , GestureStatus(..)
-    , GestureType(..)
+    , Gesture(..)
+    , GestureHandlingStatus(..)
+    , GestureModel
     , Image(..)
     , ImageBoundingBox
     , ImagePixels
@@ -21,6 +22,7 @@ module Makie.Internal.Makie exposing
     , Makie(..)
     , MakieRecord
     , Mode(..)
+    , Notices
     , ObjectContainer
     , PanePoint
     , PaneSystem
@@ -34,6 +36,7 @@ module Makie.Internal.Makie exposing
     , SingleImageCanvasContentsRecord
     , Target(..)
     , WheelEvent(..)
+    , defaultNotices
     , fromPanePoint
     , fromPaneVector
     , imagePixels
@@ -83,9 +86,8 @@ type alias MakieRecord =
     , imageWidth : Int
     , imageHeight : Int
     , annotations : ObjectContainer AnnotationRecord
-    , contactRadius : Float
-    , gesture : Gesture
-    , smartStylus : Bool
+    , gestureModel : GestureModel
+    , defaultLabel : Maybe Label
     , contents : Contents
     , renderedTime : Posix
     }
@@ -109,9 +111,9 @@ type Mode
 
 type Target
     = NoTarget
-    | TargetCreating AnnotationHandle
     | TargetSelected String AnnotationRecord -- Key, Annotation
-    | TargetEditing String { label : Maybe Label, notices : Notices, handle : AnnotationHandle }
+    | TargetCreating AnnotationHandleRecord
+    | TargetEditing String AnnotationHandleRecord
 
 
 
@@ -140,62 +142,74 @@ type WheelEvent
     = OnWheel Wheel.Event
 
 
-type alias Gesture =
-    { isSpaceKeyPressed : Bool
-    , penDeviceDetected : Bool
-    , status : GestureStatus
+
+-- Gestures
+
+
+type alias GestureModel =
+    { status : GestureHandlingStatus
+    , isSpaceKeyPressed : Bool
+    , isPenDeviceDetected : Bool
     }
 
 
-type GestureStatus
+type Gesture
     = NoGesture
-    | GestureDetectionSuspended { history : List Pointer.Event, timeStamp : Posix }
-    | GestureStart GestureType
-    | GestureOngoing GestureType
-    | GestureEnd GestureType
+    | MouseStart { shiftKey : Bool, spaceKey : Bool } PanePoint
+    | MouseOnGoing { shiftKey : Bool, spaceKey : Bool } PanePoint PanePoint -- options, last point, current point
+    | MouseEnd { shiftKey : Bool, spaceKey : Bool } PanePoint PanePoint
+    | PenStart PanePoint
+    | PenOnGoing PanePoint PanePoint
+    | PenEnd PanePoint PanePoint
+    | SingleTouchStart { smartStylus : Bool } PanePoint
+    | SingleTouchOnGoing { smartStylus : Bool } PanePoint PanePoint
+    | SingleTouchEnd { smartStylus : Bool } PanePoint PanePoint
 
 
-type GestureType
-    = MouseMoveGesture PanePoint
-    | MouseMoveWithSiftGesture PanePoint
-    | MouseMoveWithSpaceGesture PanePoint
-    | PenGesture PanePoint
-    | SingleTouchGesture Int PanePoint
-    | DoubleTouchGesture
-    | PinchCloseGesture
-    | PinchCloseAndRotateGesture
+type GestureHandlingStatus
+    = HandlingNothing
+    | Cooling (Set Int)
+      {- Cooling is used not to invoke gestures
+         when multi-pointer gesture is finished but not all of pointers are released.
+      -}
+    | HandlingMouse { pointerId : Int, lastPosition : PanePoint, shiftKey : Bool, spaceKey : Bool }
+    | HandlingPen { pointerId : Int, lastPosition : PanePoint }
+    | HandlingSingleTouch { pointerId : Int, lastPosition : PanePoint, smartStylus : Bool }
 
 
 
+{- Pointer Ids, Cooling is used not to invoke gestures when multi-pointer gesture is finished but not all of pointers are OnUp-ed. -}
+{-
+   type alias Gesture =
+       { isSpaceKeyPressed : Bool
+       , penDeviceDetected : Bool
+       , status : GestureStatus
+       }
+
+
+   type GestureStatus
+       = NoGesture
+       | GestureDetectionSuspended { history : List Pointer.Event, timeStamp : Posix }
+       | GestureStart GestureType
+       | GestureOngoing GestureType
+       | GestureEnd GestureType
+
+-}
 -- Actions
 
 
 type Action
-    = CameraActionVariant CameraAction
-    | DataActionVariant DataAction
-      -- | EditActionVariant EditAction
+    = NoAction
     | Batch (List Action)
-    | NoAction
-
-
-type CameraAction
-    = Move PaneVector
+    | Move PaneVector
     | Zoom PanePoint ReductionRate
     | Rotate PanePoint Angle
-
-
-type DataAction
-    = Insert Uuid Annotation
-    | Remove Uuid
+    | Add AnnotationRecord
+    | Insert String AnnotationRecord
+    | Delete String AnnotationRecord
 
 
 
-{-
-   type EditAction
-       = Edit Uuid EditingAnnotation -- Warning, Caution などのファンシーな機能?
-       | Finished Uuid
-       | Cancel Uuid
--}
 -- Camera
 
 
@@ -221,7 +235,11 @@ type Annotation
 
 
 type alias AnnotationRecord =
-    { label : Maybe Label, notice : Notices, shape : Shape }
+    { label : Maybe Label, notices : Notices, shape : Shape }
+
+
+type alias AnnotationHandleRecord =
+    { label : Maybe Label, notices : Notices, handle : AnnotationHandle }
 
 
 type Label
@@ -230,6 +248,10 @@ type Label
 
 type alias Notices =
     { shape : Maybe Notice, label : Maybe Notice }
+
+
+defaultNotices =
+    { shape = Nothing, label = Nothing }
 
 
 type Shape

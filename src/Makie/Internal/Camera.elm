@@ -1,7 +1,6 @@
-module Makie.Internal.Camera exposing (apply, camera)
+module Makie.Internal.Camera exposing (camera, move, rotate, zoom)
 
 import Angle exposing (Angle)
-import Direction2d
 import Frame2d
 import Makie.Internal.Makie as M exposing (Camera)
 import Point2d
@@ -14,30 +13,13 @@ camera r =
     { imageFrame = Frame2d.atOrigin, reductionRate = M.reductionRate 1, angle = Angle.degrees 0 }
 
 
-apply : M.CameraAction -> M.CameraRecord -> M.CameraRecord
-apply act r =
-    case act of
-        M.Move paneVector ->
-            applyMove paneVector r
-
-        M.Zoom panePoint newReductionRate ->
-            applyZoom panePoint newReductionRate r
-
-        M.Rotate panePoint angle ->
-            applyRotate panePoint angle r
-
-
-
--- Helper functions
-
-
-applyMove : M.PaneVector -> M.CameraRecord -> M.CameraRecord
-applyMove paneVector r =
+move : M.PaneVector -> M.CameraRecord -> M.CameraRecord
+move paneVector r =
     { r | imageFrame = Frame2d.translateBy paneVector r.imageFrame }
 
 
-applyZoom : M.PanePoint -> M.ReductionRate -> M.CameraRecord -> M.CameraRecord
-applyZoom panePoint newReductionRate r =
+zoom : M.PanePoint -> M.ReductionRate -> M.CameraRecord -> M.CameraRecord
+zoom panePoint newReductionRate r =
     let
         ratio =
             Quantity.ratio newReductionRate r.reductionRate
@@ -51,6 +33,6 @@ applyZoom panePoint newReductionRate r =
     { r | imageFrame = Frame2d.moveTo newImageOrigin r.imageFrame, reductionRate = newReductionRate }
 
 
-applyRotate : M.PanePoint -> Angle -> M.CameraRecord -> M.CameraRecord
-applyRotate panePoint angle r =
+rotate : M.PanePoint -> Angle -> M.CameraRecord -> M.CameraRecord
+rotate panePoint angle r =
     { r | imageFrame = Frame2d.rotateAround panePoint angle r.imageFrame, angle = Quantity.plus angle r.angle }

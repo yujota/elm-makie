@@ -3,7 +3,7 @@ module Makie.Events exposing (onPointerEvents, onWheelEvents)
 import Html exposing (Attribute)
 import Html.Events.Extra.Pointer as Pointer
 import Html.Events.Extra.Wheel as Wheel
-import Makie.Internal.Makie as M exposing (Action, EventStatus, Gesture(..))
+import Makie.Internal.Makie as M
 
 
 onPointerEvents : List (Attribute M.Event)
@@ -24,11 +24,13 @@ onWheelEvents =
 
 
 
--- TODO ここを修正
+{-
+   -- TODO ここを修正
 
 
-defaultOptions : EventOptions
-defaultOptions =
-    { stopPropagation = False
-    , preventDefault = True
-    }
+   defaultOptions : EventOptions
+   defaultOptions =
+       { stopPropagation = False
+       , preventDefault = True
+       }
+-}

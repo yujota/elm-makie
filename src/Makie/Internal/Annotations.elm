@@ -1,4 +1,12 @@
-module Makie.Internal.Annotations exposing (getHandle, getTouched, isTouched, startPoint, startRectangle)
+module Makie.Internal.Annotations exposing
+    ( getHandle
+    , getTouched
+    , isTouched
+    , shapeTo
+    , startPoint
+    , startRectangle
+    , updateHandle
+    )
 
 import Array
 import BoundingBox2d
@@ -9,6 +17,7 @@ import Point2d
 import Polygon2d
 import Quantity exposing (Quantity, Squared)
 import Rectangle2d
+import Vector2d
 
 
 getTouched :
@@ -39,6 +48,35 @@ getHandle tolerance imagePoint shape =
         M.Polygon polygonShape ->
             -- TODO
             Nothing
+
+
+updateHandle : M.ImagePoint -> M.AnnotationHandle -> M.AnnotationHandle
+updateHandle imagePoint handle =
+    case handle of
+        M.PointMove pointShape r ->
+            M.PointMove pointShape { r | control = imagePoint }
+
+        M.RectangleMove rectangleShape r ->
+            M.RectangleMove rectangleShape { r | control = imagePoint }
+
+        M.RectangleEditCorner r ->
+            M.RectangleEditCorner { r | control = imagePoint }
+
+
+shapeTo : M.AnnotationHandle -> M.Shape
+shapeTo handle =
+    case handle of
+        M.PointMove pointShape { start, control } ->
+            M.Point { pointShape | point = Point2d.translateBy (Vector2d.from start control) pointShape.point }
+
+        M.RectangleMove rectangleShape { start, control } ->
+            M.Rectangle
+                { rectangleShape
+                    | rectangle = Rectangle2d.translateBy (Vector2d.from start control) rectangleShape.rectangle
+                }
+
+        M.RectangleEditCorner { oppositeCorner, control } ->
+            M.Rectangle { rectangle = Rectangle2d.from oppositeCorner control }
 
 
 isTouched : M.ImagePixels -> M.ImagePoint -> M.Shape -> Bool
