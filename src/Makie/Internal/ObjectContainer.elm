@@ -1,4 +1,4 @@
-module Makie.Internal.AnnotationContainer exposing
+module Makie.Internal.ObjectContainer exposing
     ( getIndicesTouched
     , getLinerQuaternaryTreeIndex
     , getQuadKey
@@ -67,13 +67,13 @@ remove key container =
             container
 
 
-touched : (o -> Bool) -> M.ImageBoundingBox -> M.ObjectContainer o -> List o
+touched : (o -> Bool) -> M.ImageBoundingBox -> M.ObjectContainer o -> List ( String, o )
 touched checkInDetail boundingBox container =
     let
-        filter a =
+        filter key a =
             case checkInDetail a of
                 True ->
-                    Just a
+                    Just ( key, a )
 
                 False ->
                     Nothing
@@ -84,7 +84,7 @@ touched checkInDetail boundingBox container =
                 Array.get i container.linerQuaternaryTree
                     |> Maybe.map Set.toList
                     |> Maybe.withDefault []
-                    |> List.filterMap (\n -> Dict.get n container.objects |> Maybe.andThen (.object >> filter))
+                    |> List.filterMap (\n -> Dict.get n container.objects |> Maybe.andThen (.object >> filter n))
             )
 
 

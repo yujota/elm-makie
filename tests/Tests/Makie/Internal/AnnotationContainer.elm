@@ -3,8 +3,8 @@ module Tests.Makie.Internal.AnnotationContainer exposing (..)
 import Binary
 import BoundingBox2d
 import Expect exposing (equal, equalLists)
-import Makie.Internal.AnnotationContainer as AC
 import Makie.Internal.Makie as M
+import Makie.Internal.ObjectContainer as AC
 import Test exposing (Test, describe, test)
 
 
@@ -22,7 +22,7 @@ testGetQuadKey =
             in
             equal actual desired
     in
-    describe "test Makie.Internal.AnnotationContainer.getQuadKey" [ test "test Example 1" testExampleOne ]
+    describe "test Makie.Internal.ObjectContainer.getQuadKey" [ test "test Example 1" testExampleOne ]
 
 
 testGetLinerQuaternaryTreeIndex : Test
@@ -119,7 +119,7 @@ testGetLinerQuaternaryTreeIndex =
             in
             equal actual desired
     in
-    describe "test Makie.Internal.AnnotationContainer.getLinerQuaternaryTreeIndex"
+    describe "test Makie.Internal.ObjectContainer.getLinerQuaternaryTreeIndex"
         [ test "test Example 1" testExampleOne
         , test "test Example 2" testExampleTwo
         , test "test Example 3" testExampleThree
@@ -181,7 +181,7 @@ testGetIndicesTouched =
             in
             equalLists actual desired
     in
-    describe "test Makie.Internal.AnnotationContainer.getIndicesTouched"
+    describe "test Makie.Internal.ObjectContainer.getIndicesTouched"
         [ test "test Example 1" testExampleOne
         , test "test Example 2" testExampleTwo
         , test "test Example 3" testExampleThree

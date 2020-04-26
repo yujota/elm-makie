@@ -1,166 +1,212 @@
-module Makie.Internal.Events exposing (handlePointerEvent, handleWheelEvent)
+module Makie.Internal.Events exposing (interpret)
 
 import Angle exposing (Angle)
 import Direction2d
 import Html.Events.Extra.Pointer as Pointer
+import Makie.Internal.Annotations as Annotations
+import Makie.Internal.Canvas
+import Makie.Internal.Gestures as Gestures
 import Makie.Internal.Makie as M
+import Pixels
 import Quantity
 
 
-handlePointerEvent :
-    { paneWidth : Int, paneHeight : Int }
-    -> M.PointerEvent
-    -> M.EventStatusRecord
-    -> ( M.EventStatusRecord, M.Action )
-handlePointerEvent { paneWidth, paneHeight } ev r =
-    case r.mode of
-        M.NoGesture ->
-            zeroPointAction ev r
+interpret : M.Event -> M.MakieRecord -> ( M.MakieRecord, M.Action )
+interpret event ({ camera } as m) =
+    case event of
+        M.PointerEventVariant pointerEvent ->
+            interpretPointerEvents pointerEvent m
 
-        M.SingleTouchGesture p ->
-            onePointAction ev r p
+        M.WheelEventVariant (M.OnWheel ev) ->
+            let
+                zoomRatio =
+                    if ev.deltaY < 0 then
+                        2
 
-        M.RotateByCenterGesture p ->
-            onePointRotationModeAction { paneWidth = paneWidth, paneHeight = paneHeight } ev r p
+                    else
+                        0.5
 
-        _ ->
-            ( r, M.NoAction )
+                newReductionRate =
+                    Quantity.multiplyBy zoomRatio camera.reductionRate
 
+                zoomPoint =
+                    ev.mouseEvent |> .offsetPos |> (\( x, y ) -> M.panePoint { x = x, y = y })
+            in
+            ( m, M.Zoom zoomPoint newReductionRate |> M.CameraActionVariant )
 
-handleWheelEvent : M.CameraRecord -> M.WheelEvent -> M.EventStatusRecord -> ( M.EventStatusRecord, M.Action )
-handleWheelEvent camera (M.OnWheel ev) r =
-    let
-        zoomRatio =
-            if ev.deltaY < 0 then
-                2
+        M.RefreshPane posix ->
+            case m.contents of
+                M.SingleImageCanvasContents c ->
+                    Makie.Internal.Canvas.renderSingleImageCanvas
+                        { paneWidth = m.paneWidth
+                        , paneHeight = m.paneHeight
+                        , imageWidth = m.imageWidth
+                        , imageHeight = m.imageHeight
+                        , camera = m.camera
+                        }
+                        c
+                        |> (\cnt ->
+                                ( { m
+                                    | contents = M.SingleImageCanvasContents cnt
+                                    , renderedTime = posix
+                                  }
+                                , M.NoAction
+                                )
+                           )
 
-            else
-                0.5
+        M.SingleImageCanvasTextureLoaded maybeTexture ->
+            case m.contents of
+                M.SingleImageCanvasContents c ->
+                    Makie.Internal.Canvas.handleSingleImageCanvasTextureLoaded maybeTexture c
+                        |> (\cnt ->
+                                ( { m | contents = M.SingleImageCanvasContents cnt } |> M.requestRendering
+                                , M.NoAction
+                                )
+                           )
 
-        newReductionRate =
-            Quantity.multiplyBy zoomRatio camera.reductionRate
+        M.OpenLabelEdit uuid ->
+            ( m, M.NoAction )
 
-        zoomPoint =
-            ev.mouseEvent |> .offsetPos |> (\( x, y ) -> M.panePoint { x = x, y = y })
-    in
-    ( r, M.Zoom zoomPoint newReductionRate |> M.CameraActionVariant )
+        M.SetMode mode ->
+            ( { m | mode = mode }, M.NoAction )
 
 
 
 -- Helper functions
 
 
-zeroPointAction : M.PointerEvent -> M.EventStatusRecord -> ( M.EventStatusRecord, M.Action )
-zeroPointAction event _ =
-    case event of
-        M.OnDown e ->
-            let
-                isShiftKeyPressed evt =
-                    evt |> .pointer |> .keys |> .shift
-            in
-            case isShiftKeyPressed e of
-                True ->
-                    ( { mode = M.RotateByCenterGesture e }, M.NoAction )
-
-                False ->
-                    ( { mode = M.SingleTouchGesture e }, M.NoAction )
-
-        _ ->
-            ( { mode = M.NoGesture }, M.NoAction )
-
-
-onePointAction : M.PointerEvent -> M.EventStatusRecord -> Pointer.Event -> ( M.EventStatusRecord, M.Action )
-onePointAction event s p =
-    case event of
-        M.OnDown _ ->
-            ( s, M.NoAction )
-
-        M.OnMove e ->
-            if e.pointerId == p.pointerId then
-                ( { s | mode = M.SingleTouchGesture e }, calcDiff p e |> M.paneVector |> M.Move |> M.CameraActionVariant )
-
-            else
-                ( s, M.NoAction )
-
-        M.OnUp e ->
-            if e.pointerId == p.pointerId then
-                ( { s | mode = M.NoGesture }, M.NoAction )
-
-            else
-                ( s, M.NoAction )
-
-        M.OnCancel e ->
-            if e.pointerId == p.pointerId then
-                ( { s | mode = M.NoGesture }, M.NoAction )
-
-            else
-                ( s, M.NoAction )
-
-        M.OnOut e ->
-            if e.pointerId == p.pointerId then
-                ( { s | mode = M.NoGesture }, M.NoAction )
-
-            else
-                ( s, M.NoAction )
-
-        M.OnLeave e ->
-            if e.pointerId == p.pointerId then
-                ( { s | mode = M.NoGesture }, M.NoAction )
-
-            else
-                ( s, M.NoAction )
-
-
-onePointRotationModeAction :
-    { paneWidth : Int, paneHeight : Int }
-    -> M.PointerEvent
-    -> M.EventStatusRecord
-    -> Pointer.Event
-    -> ( M.EventStatusRecord, M.Action )
-onePointRotationModeAction { paneWidth, paneHeight } event s p =
-    case event of
-        M.OnMove e ->
-            if e.pointerId == p.pointerId then
-                let
-                    centerPoint =
-                        M.panePoint { x = toFloat paneWidth / 2, y = toFloat paneHeight / 2 }
-                in
-                ( { s | mode = M.RotateByCenterGesture e }
-                , calcAngle centerPoint p e
-                    |> Maybe.map (\a -> M.Rotate centerPoint a |> M.CameraActionVariant)
-                    |> Maybe.withDefault M.NoAction
-                )
-
-            else
-                ( s, M.NoAction )
-
-        _ ->
-            onePointAction event s p
-
-
-calcDiff : Pointer.Event -> Pointer.Event -> { dx : Float, dy : Float }
-calcDiff pointerA pointerB =
+interpretPointerEvents : M.PointerEvent -> M.MakieRecord -> ( M.MakieRecord, M.Action )
+interpretPointerEvents event ({ gesture, paneWidth, paneHeight } as m) =
     let
-        offsetPos e =
-            .offsetPos e.pointer
+        newGesture =
+            Gestures.toGesture event gesture
     in
-    ( pointerA, pointerB )
-        |> Tuple.mapBoth offsetPos offsetPos
-        |> (\( a, b ) -> { dx = Tuple.first b - Tuple.first a, dy = Tuple.second b - Tuple.second a })
+    Tuple.mapFirst (\r -> { r | gesture = newGesture }) <|
+        case ( gesture.status, newGesture.status ) of
+            ( _, M.GestureStart (M.MouseMoveGesture p) ) ->
+                -- TODO: 4/26 はここから実装
+                ( m, M.NoAction )
+
+            _ ->
+                ( m, M.NoAction )
 
 
-calcAngle : M.PanePoint -> Pointer.Event -> Pointer.Event -> Maybe Angle
-calcAngle centerPoint pointerA pointerB =
+noGesture : M.PointerEvent -> M.MakieRecord -> ( M.MakieRecord, M.Action )
+noGesture event m =
+    (\r -> ( r, M.NoAction )) <|
+        case event of
+            M.OnDown e ->
+                case e.pointerType of
+                    Pointer.MouseType ->
+                        if isShiftKeyPressed e then
+                            { m | gesture = M.MouseCameraRotateByCenterGesture (offsetPosAsPanePoint e) }
+
+                        else
+                            noGestureMouseOnDown (offsetPosAsPanePoint e) m
+
+                    Pointer.TouchType ->
+                        -- TODO: Implement later
+                        m
+
+                    Pointer.PenType ->
+                        { m | gesture = M.PenGesture e.pointerId <| offsetPosAsPanePoint e, smartStylus = True }
+
+            _ ->
+                m
+
+
+noGestureMouseOnDown : M.PanePoint -> M.MakieRecord -> M.MakieRecord
+noGestureMouseOnDown panePoint ({ camera } as m) =
+    case m.target of
+        M.NoTarget ->
+            case getTouchedAnnotation panePoint m of
+                Just ( key, ant ) ->
+                    -- In case, selecting annotations
+                    { m | target = M.TargetSelected key ant }
+
+                Nothing ->
+                    case m.mode of
+                        M.BrowseMode ->
+                            { m | gesture = M.MouseCameraMoveGesture panePoint }
+
+                        M.PointMode ->
+                            { m
+                                | gesture = M.MouseAnnotationHandleGesture panePoint
+                                , target =
+                                    M.fromPanePoint camera.reductionRate camera.imageFrame panePoint
+                                        |> Annotations.startPoint
+                                        |> M.TargetCreating
+                            }
+
+                        M.RectangleMode ->
+                            { m
+                                | gesture = M.MouseAnnotationHandleGesture panePoint
+                                , target =
+                                    M.fromPanePoint camera.reductionRate camera.imageFrame panePoint
+                                        |> Annotations.startRectangle
+                                        |> M.TargetCreating
+                            }
+
+                        M.PolygonMode ->
+                            -- TODO
+                            m
+
+                        M.SelectionRectangleMode ->
+                            -- TODO
+                            m
+
+        M.TargetCreating _ ->
+            -- This case should not be happened.
+            { m | target = M.NoTarget }
+
+        M.TargetSelected targetId targetAnnotation ->
+            case Annotations.getHandle of
+                _ ->
+                    m
+
+        M.TargetEditing targetId targetAnnotation ->
+            -- This case should not be happened.
+            { m | target = M.NoTarget }
+
+
+
+{-
+   case (getTouchedAnnotation panePoint m, m.target) of
+       (Just (key, ant), M.NoTarget) ->
+       (Just (key, ant), M.TargetSelected targetKey targetAnnotaton) ->
+-}
+
+
+getTouchedAnnotation : M.PanePoint -> M.MakieRecord -> Maybe ( String, M.AnnotationRecord )
+getTouchedAnnotation panePoint ({ camera } as m) =
     let
-        getDirection e =
-            e.pointer
-                |> .offsetPos
-                |> (\( x, y ) -> M.panePoint { x = x, y = y })
-                |> Direction2d.from centerPoint
+        tolerance =
+            Pixels.pixels 5 |> Quantity.at camera.reductionRate
     in
-    case ( getDirection pointerA, getDirection pointerB ) of
-        ( Just directionA, Just directionB ) ->
-            Just (Direction2d.angleFrom directionA directionB)
+    Annotations.getTouched
+        tolerance
+        (M.fromPanePoint camera.reductionRate camera.imageFrame panePoint)
+        m.annotations
 
-        _ ->
-            Nothing
+
+getAnnotationHandle : M.PanePoint -> M.MakieRecord -> Maybe ( String, M.AnnotationRecord )
+getAnnotationHandle panePoint ({ camera } as m) =
+    -- ここからスタート
+    let
+        tolerance =
+            Pixels.pixels 5 |> Quantity.at camera.reductionRate
+    in
+    Annotations.getTouched
+        tolerance
+        (M.fromPanePoint camera.reductionRate camera.imageFrame panePoint)
+        m.annotations
+
+
+isShiftKeyPressed : Pointer.Event -> Bool
+isShiftKeyPressed =
+    .pointer >> .keys >> .shift
+
+
+offsetPosAsPanePoint : Pointer.Event -> M.PanePoint
+offsetPosAsPanePoint =
+    .pointer >> .offsetPos >> (\( x, y ) -> M.panePoint { x = x, y = y })

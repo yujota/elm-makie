@@ -40,7 +40,7 @@ type alias Action =
 makie : { src : String, width : Int, height : Int, name : String } -> Makie
 makie r =
     M.Makie
-        { event = M.initialEventStatus
+        { eventStatus = M.initialEventStatus
         , imageWidth = r.width
         , imageHeight = r.height
         , paneWidth = 640
@@ -57,41 +57,8 @@ makie r =
 
 
 interpret : Event -> Makie -> ( Makie, Action )
-interpret e ((M.Makie r) as m) =
-    case e of
-        M.PointerEventVariant pointerEvent ->
-            Makie.Internal.Events.handlePointerEvent
-                { paneWidth = r.paneWidth, paneHeight = r.paneHeight }
-                pointerEvent
-                r.event
-                |> Tuple.mapFirst (\ev -> M.Makie { r | event = ev })
-
-        M.WheelEventVariant wheelEvent ->
-            Makie.Internal.Events.handleWheelEvent r.camera wheelEvent r.event
-                |> Tuple.mapFirst (\ev -> M.Makie { r | event = ev })
-
-        M.RefreshPane posix ->
-            case r.contents of
-                M.SingleImageCanvasContents c ->
-                    Makie.Internal.Canvas.renderSingleImageCanvas
-                        { paneWidth = r.paneWidth
-                        , paneHeight = r.paneHeight
-                        , imageWidth = r.imageWidth
-                        , imageHeight = r.imageHeight
-                        , camera = r.camera
-                        }
-                        c
-                        |> (\cnt -> ( M.Makie { r | contents = M.SingleImageCanvasContents cnt }, M.NoAction ))
-
-        M.SingleImageCanvasTextureLoaded texture ->
-            case r.contents of
-                M.SingleImageCanvasContents c ->
-                    Makie.Internal.Canvas.handleSingleImageCanvasTextureLoaded texture c
-                        |> (\cnt ->
-                                ( M.Makie { r | contents = M.SingleImageCanvasContents cnt } |> M.requestRendering
-                                , M.NoAction
-                                )
-                           )
+interpret e (M.Makie r) =
+    Makie.Internal.Events.interpret e r |> Tuple.mapFirst M.Makie
 
 
 apply : Action -> Makie -> Makie

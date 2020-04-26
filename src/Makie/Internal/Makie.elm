@@ -1,14 +1,16 @@
 module Makie.Internal.Makie exposing
     ( Action(..)
     , Annotation(..)
+    , AnnotationHandle(..)
+    , AnnotationRecord
     , Camera(..)
     , CameraAction(..)
     , CameraRecord
     , Contents(..)
     , Event(..)
-    , EventStatus(..)
-    , EventStatusRecord
-    , Gesture(..)
+    , Gesture
+    , GestureStatus(..)
+    , GestureType(..)
     , Image(..)
     , ImageBoundingBox
     , ImagePixels
@@ -18,15 +20,19 @@ module Makie.Internal.Makie exposing
     , Label
     , Makie(..)
     , MakieRecord
+    , Mode(..)
     , ObjectContainer
     , PanePoint
     , PaneSystem
     , PaneVector
+    , PointShape
     , PointerEvent(..)
-    , RectangleAnnotationHandle(..)
-    , RectangleAnnotationRecord
+    , PolygonShape
+    , RectangleShape
     , ReductionRate
+    , Shape(..)
     , SingleImageCanvasContentsRecord
+    , Target(..)
     , WheelEvent(..)
     , fromPanePoint
     , fromPaneVector
@@ -35,7 +41,6 @@ module Makie.Internal.Makie exposing
     , imageVector
     , inImagePixels
     , inReductionRate
-    , initialEventStatus
     , panePoint
     , paneVector
     , reductionRate
@@ -56,6 +61,7 @@ import Html.Events.Extra.Pointer as Pointer
 import Html.Events.Extra.Wheel as Wheel
 import Pixels exposing (Pixels)
 import Point2d exposing (Point2d)
+import Polygon2d exposing (Polygon2d)
 import Quantity exposing (Quantity(..), Rate(..))
 import Rectangle2d exposing (Rectangle2d)
 import Set exposing (Set)
@@ -69,13 +75,19 @@ type Makie
 
 
 type alias MakieRecord =
-    { event : EventStatusRecord
+    { camera : CameraRecord
+    , target : Target
+    , mode : Mode
     , paneWidth : Int
     , paneHeight : Int
     , imageWidth : Int
     , imageHeight : Int
-    , camera : CameraRecord
+    , annotations : ObjectContainer AnnotationRecord
+    , contactRadius : Float
+    , gesture : Gesture
+    , smartStylus : Bool
     , contents : Contents
+    , renderedTime : Posix
     }
 
 
@@ -85,6 +97,21 @@ type Image
 
 type Contents
     = SingleImageCanvasContents SingleImageCanvasContentsRecord
+
+
+type Mode
+    = BrowseMode
+    | PointMode
+    | RectangleMode
+    | PolygonMode
+    | SelectionRectangleMode
+
+
+type Target
+    = NoTarget
+    | TargetCreating AnnotationHandle
+    | TargetSelected String AnnotationRecord -- Key, Annotation
+    | TargetEditing String { label : Maybe Label, notices : Notices, handle : AnnotationHandle }
 
 
 
@@ -97,7 +124,7 @@ type Event
     | RefreshPane Posix
     | SingleImageCanvasTextureLoaded (Maybe Texture)
     | OpenLabelEdit Uuid
-    | SetMode
+    | SetMode Mode
 
 
 type PointerEvent
@@ -113,26 +140,30 @@ type WheelEvent
     = OnWheel Wheel.Event
 
 
-type EventStatus
-    = EventStatus EventStatusRecord
+type alias Gesture =
+    { isSpaceKeyPressed : Bool
+    , penDeviceDetected : Bool
+    , status : GestureStatus
+    }
 
 
-type alias EventStatusRecord =
-    { mode : Gesture }
-
-
-type Gesture
+type GestureStatus
     = NoGesture
-    | SingleTouchGesture Pointer.Event
-    | RotateByCenterGesture Pointer.Event
-    | TwoPointer { id1 : Int, id2 : Int, history1 : List ( Float, Float ), history2 : List ( Float, Float ) }
-    | ZoomPointer
-    | RotatePointer
+    | GestureDetectionSuspended { history : List Pointer.Event, timeStamp : Posix }
+    | GestureStart GestureType
+    | GestureOngoing GestureType
+    | GestureEnd GestureType
 
 
-initialEventStatus : EventStatusRecord
-initialEventStatus =
-    { mode = NoGesture }
+type GestureType
+    = MouseMoveGesture PanePoint
+    | MouseMoveWithSiftGesture PanePoint
+    | MouseMoveWithSpaceGesture PanePoint
+    | PenGesture PanePoint
+    | SingleTouchGesture Int PanePoint
+    | DoubleTouchGesture
+    | PinchCloseGesture
+    | PinchCloseAndRotateGesture
 
 
 
@@ -142,7 +173,7 @@ initialEventStatus =
 type Action
     = CameraActionVariant CameraAction
     | DataActionVariant DataAction
-    | EditActionVariant EditAction
+      -- | EditActionVariant EditAction
     | Batch (List Action)
     | NoAction
 
@@ -158,13 +189,13 @@ type DataAction
     | Remove Uuid
 
 
-type EditAction
-    = Edit Uuid EditingAnnotation -- Warning, Caution などのファンシーな機能?
-    | Finished Uuid
-    | Cancel Uuid
 
-
-
+{-
+   type EditAction
+       = Edit Uuid EditingAnnotation -- Warning, Caution などのファンシーな機能?
+       | Finished Uuid
+       | Cancel Uuid
+-}
 -- Camera
 
 
@@ -189,53 +220,59 @@ type Annotation
     = Annotation AnnotationRecord
 
 
-{-| internal 以外では使わない
--}
-type EditingAnnotation
-    = EditingAnnotation EditingAnnotationRecord
-
-
 type alias AnnotationRecord =
-    { label : Label, spec : AnnotationSpec }
-
-
-type AnnotationSpec
-    = PointAnnotation ImagePoint
-    | RectangleAnnotation RectangleAnnotationRecord
-
-
-type alias RectangleAnnotationRecord =
-    { rectangle : ImageRectangle }
-
-
-type alias EditingAnnotationRecord =
-    { label : Maybe Label, status : Maybe EditingStatus, spec : EditingAnnotationSpec }
-
-
-type EditingStatus
-    = Warning
-
-
-type EditingAnnotationSpec
-    = EditingPointAnnotation Uuid ImagePoint -- CategoryId, {x, y}
-    | EditingRectangle RectangleAnnotationHandle
-
-
-type RectangleAnnotationHandle
-    = RectangleMoveHandle { start : ImagePoint, control : ImagePoint, original : ImageRectangle }
-    | RectangleCornerHandle { anchor : ImagePoint, control : ImagePoint }
-
-
-type alias ObjectContainer o =
-    { linerQuaternaryTree : Array (Set String) -- Hashtable for (Morton Order -> Annotation Id)
-    , objects : Dict String { index : Int, object : o, boundingBox : ImageBoundingBox }
-    , depth : Int
-    , unitSize : Int
-    }
+    { label : Maybe Label, notice : Notices, shape : Shape }
 
 
 type Label
-    = CategoryId Uuid
+    = BelongsToCategory Uuid
+
+
+type alias Notices =
+    { shape : Maybe Notice, label : Maybe Notice }
+
+
+type Shape
+    = Point PointShape
+    | Rectangle RectangleShape
+    | Polygon PolygonShape
+
+
+type alias PointShape =
+    { point : ImagePoint }
+
+
+type alias RectangleShape =
+    { rectangle : ImageRectangle }
+
+
+type alias PolygonShape =
+    { polygon : ImagePolygon }
+
+
+type Notice
+    = Warning String
+    | Danger String
+
+
+type AnnotationHandle
+    = PointMove PointShape { start : ImagePoint, control : ImagePoint }
+    | RectangleMove RectangleShape { start : ImagePoint, control : ImagePoint }
+    | RectangleEditCorner { oppositeCorner : ImagePoint, control : ImagePoint }
+
+
+
+{-
+   type EditingAnnotationSpec
+       = EditingPointAnnotation Uuid ImagePoint -- CategoryId, {x, y}
+       | EditingRectangle RectangleAnnotationHandle -- TODO: ここでハンドルが来るのはおかしい
+
+
+   type RectangleAnnotationHandle
+       = RectangleMoveHandle { start : ImagePoint, control : ImagePoint, original : ImageRectangle }
+       | RectangleCornerHandle { anchor : ImagePoint, control : ImagePoint }
+
+-}
 
 
 type Category
@@ -265,8 +302,9 @@ type alias SingleImageCanvasContentsRecord =
     }
 
 
-requestRendering : Makie -> Makie
+requestRendering : MakieRecord -> MakieRecord
 requestRendering m =
+    -- TODO : Renderするものを調整できるようにする.
     m
 
 
@@ -293,6 +331,10 @@ type alias ImagePoint =
 
 type alias ImageRectangle =
     Rectangle2d ImageSystemPixels ImageSystem
+
+
+type alias ImagePolygon =
+    Polygon2d ImageSystemPixels ImageSystem
 
 
 type alias ImageVector =
@@ -405,3 +447,15 @@ reductionRate n =
 inReductionRate : Quantity Float ReductionRateUnit -> Float
 inReductionRate (Quantity n) =
     n
+
+
+
+-- Helpers
+
+
+type alias ObjectContainer o =
+    { linerQuaternaryTree : Array (Set String) -- Hashtable for (Morton Order -> Annotation Id)
+    , objects : Dict String { index : Int, object : o, boundingBox : ImageBoundingBox }
+    , depth : Int
+    , unitSize : Int
+    }

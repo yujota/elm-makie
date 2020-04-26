@@ -21,3 +21,14 @@ onWheelEvents : List (Attribute M.Event)
 onWheelEvents =
     [ Wheel.onWheel (M.OnWheel >> M.WheelEventVariant)
     ]
+
+
+
+-- TODO ここを修正
+
+
+defaultOptions : EventOptions
+defaultOptions =
+    { stopPropagation = False
+    , preventDefault = True
+    }
