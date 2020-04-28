@@ -1,23 +1,49 @@
 module Makie.Internal.Annotations exposing
     ( getHandle
     , getTouched
+    , insert
     , isTouched
+    , isVisible
+    , pop
     , shapeTo
     , startPoint
     , startRectangle
     , updateHandle
+    , visibleItems
     )
 
 import Array
 import BoundingBox2d
 import Makie.Internal.Makie as M
 import Makie.Internal.ObjectContainer as OC
-import Pixels
-import Point2d
-import Polygon2d
+import Point2d exposing (Point2d)
+import Polygon2d exposing (Polygon2d)
 import Quantity exposing (Quantity, Squared)
-import Rectangle2d
+import Rectangle2d exposing (Rectangle2d)
 import Vector2d
+
+
+
+-- Action related
+
+
+insert : String -> M.AnnotationRecord -> M.MakieRecord -> M.MakieRecord
+insert key ({ shape } as ant) ({ annotations } as m) =
+    case getBoundingBox shape of
+        Just bBox ->
+            OC.insert key bBox ant annotations |> (\ants -> { m | annotations = ants })
+
+        Nothing ->
+            m
+
+
+pop : String -> M.MakieRecord -> ( Maybe M.AnnotationRecord, M.MakieRecord )
+pop key ({ annotations } as m) =
+    ( OC.get key annotations, OC.remove key annotations |> (\ants -> { m | annotations = ants }) )
+
+
+
+-- Queries
 
 
 getTouched :
@@ -30,6 +56,45 @@ getTouched tolerance imagePoint container =
         |> (\b -> OC.touched (.shape >> isTouched tolerance imagePoint) b container)
         |> List.sortBy (Tuple.second >> .shape >> roughSize)
         |> List.head
+
+
+visibleItems :
+    { paneWidth : Float, paneHeight : Float }
+    -> M.CameraRecord
+    -> M.ObjectContainer M.AnnotationRecord
+    -> List ( String, M.AnnotationRecord )
+visibleItems { paneWidth, paneHeight } camera container =
+    let
+        cameraArea =
+            Rectangle2d.from Point2d.origin (Point2d.pixels paneWidth paneHeight)
+                |> Rectangle2d.relativeTo camera.imageFrame
+                |> Rectangle2d.at camera.reductionRate
+    in
+    OC.touched (.shape >> isVisibleLogic cameraArea) (Rectangle2d.boundingBox cameraArea) container
+
+
+isVisible : M.MakieRecord -> M.AnnotationRecord -> Bool
+isVisible { camera, paneWidth, paneHeight } { shape } =
+    let
+        cameraArea =
+            Rectangle2d.from Point2d.origin (Point2d.pixels (toFloat paneWidth) (toFloat paneHeight))
+                |> Rectangle2d.relativeTo camera.imageFrame
+                |> Rectangle2d.at camera.reductionRate
+    in
+    isVisibleLogic cameraArea shape
+
+
+isVisibleLogic : M.ImageRectangle -> M.Shape -> Bool
+isVisibleLogic r s =
+    case s of
+        M.Point { point } ->
+            Rectangle2d.contains point r
+
+        M.Rectangle rectangleShape ->
+            detectCollisionRect rectangleShape.rectangle r
+
+        M.Polygon polygonShape ->
+            detectCollisionPolygon r polygonShape.polygon
 
 
 getHandle : M.ImagePixels -> M.ImagePoint -> M.Shape -> Maybe M.AnnotationHandle
@@ -177,3 +242,48 @@ getRectangleHandleMove _ point r =
 
     else
         Nothing
+
+
+getBoundingBox : M.Shape -> Maybe M.ImageBoundingBox
+getBoundingBox shape =
+    case shape of
+        M.Point pointShape ->
+            BoundingBox2d.withDimensions ( M.imagePixels 1, M.imagePixels 1 ) pointShape.point |> Just
+
+        M.Rectangle rectangleShape ->
+            Rectangle2d.boundingBox rectangleShape.rectangle |> Just
+
+        M.Polygon polygonShape ->
+            Polygon2d.boundingBox polygonShape.polygon
+
+
+
+-- Collision detection
+
+
+detectCollisionRect : Rectangle2d a b -> Rectangle2d a b -> Bool
+detectCollisionRect rectA rectB =
+    List.map (Tuple.pair (\p -> Rectangle2d.contains p rectA)) (Rectangle2d.vertices rectB)
+        ++ List.map (Tuple.pair (\p -> Rectangle2d.contains p rectB)) (Rectangle2d.vertices rectA)
+        |> detectCollisionLoop
+
+
+detectCollisionPolygon : Rectangle2d a b -> Polygon2d a b -> Bool
+detectCollisionPolygon rect polygon =
+    List.map (Tuple.pair (\p -> Polygon2d.contains p polygon)) (Rectangle2d.vertices rect)
+        ++ List.map (Tuple.pair (\p -> Rectangle2d.contains p rect)) (Polygon2d.vertices polygon)
+        |> detectCollisionLoop
+
+
+detectCollisionLoop : List ( Point2d a b -> Bool, Point2d a b ) -> Bool
+detectCollisionLoop l =
+    case l of
+        ( f, p ) :: rest ->
+            if f p then
+                True
+
+            else
+                detectCollisionLoop rest
+
+        [] ->
+            False

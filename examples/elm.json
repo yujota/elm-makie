@@ -7,6 +7,8 @@
     "elm-version": "0.19.1",
     "dependencies": {
         "direct": {
+            "NoRedInk/elm-random-pcg-extended": "1.0.0",
+            "NoRedInk/elm-uuid": "2.0.0",
             "avh4/elm-color": "1.0.0",
             "danyx23/elm-uuid": "2.1.2",
             "elm/browser": "1.0.2",
@@ -20,6 +22,7 @@
             "mpizenberg/elm-pointer-events": "4.0.2"
         },
         "indirect": {
+            "NoRedInk/elm-random-general": "1.0.0",
             "elm/bytes": "1.0.8",
             "elm/file": "1.0.5",
             "elm/json": "1.1.3",

@@ -36,34 +36,10 @@ interpret event ({ camera } as m) =
             ( m, M.Zoom zoomPoint newReductionRate )
 
         M.RefreshPane posix ->
-            case m.contents of
-                M.SingleImageCanvasContents c ->
-                    Makie.Internal.Canvas.renderSingleImageCanvas
-                        { paneWidth = m.paneWidth
-                        , paneHeight = m.paneHeight
-                        , imageWidth = m.imageWidth
-                        , imageHeight = m.imageHeight
-                        , camera = m.camera
-                        }
-                        c
-                        |> (\cnt ->
-                                ( { m
-                                    | contents = M.SingleImageCanvasContents cnt
-                                    , renderedTime = posix
-                                  }
-                                , M.NoAction
-                                )
-                           )
+            ( Makie.Internal.Canvas.render m, M.NoAction )
 
         M.SingleImageCanvasTextureLoaded maybeTexture ->
-            case m.contents of
-                M.SingleImageCanvasContents c ->
-                    Makie.Internal.Canvas.handleSingleImageCanvasTextureLoaded maybeTexture c
-                        |> (\cnt ->
-                                ( { m | contents = M.SingleImageCanvasContents cnt } |> M.requestRendering
-                                , M.NoAction
-                                )
-                           )
+            ( Makie.Internal.Canvas.textureLoaded maybeTexture m, M.NoAction )
 
         M.OpenLabelEdit uuid ->
             ( m, M.NoAction )
@@ -133,6 +109,9 @@ mouseStart r panePoint ({ camera } as m) =
                             M.fromPanePoint camera.reductionRate camera.imageFrame panePoint |> f
                         }
               }
+                |> Makie.Internal.Canvas.requestRenderAnnotations
+                |> Makie.Internal.Canvas.requestRenderEditing
+                |> Debug.log "start annotations"
             , M.NoAction
             )
     in
@@ -142,6 +121,7 @@ mouseStart r panePoint ({ camera } as m) =
                 Just ( key, ant ) ->
                     -- In case, selecting an annotation
                     ( { m | target = M.TargetSelected key ant, gestureModel = Gestures.clear m.gestureModel }
+                        |> Makie.Internal.Canvas.requestRenderAnnotations
                     , M.NoAction
                     )
 
@@ -180,6 +160,8 @@ mouseStart r panePoint ({ camera } as m) =
                             M.TargetEditing targetId
                                 { label = targetAnnotation.label, notices = targetAnnotation.notices, handle = hdl }
                       }
+                        |> Makie.Internal.Canvas.requestRenderAnnotations
+                        |> Makie.Internal.Canvas.requestRenderEditing
                     , M.NoAction
                     )
 
@@ -188,12 +170,16 @@ mouseStart r panePoint ({ camera } as m) =
                         Just ( key, ant ) ->
                             -- Change selecting target
                             ( { m | target = M.TargetSelected key ant, gestureModel = Gestures.clear m.gestureModel }
+                                |> Makie.Internal.Canvas.requestRenderAnnotations
+                                |> Makie.Internal.Canvas.requestRenderEditing
                             , M.NoAction
                             )
 
                         Nothing ->
                             -- Unselect target
                             ( { m | target = M.NoTarget, gestureModel = Gestures.clear m.gestureModel }
+                                |> Makie.Internal.Canvas.requestRenderAnnotations
+                                |> Makie.Internal.Canvas.requestRenderEditing
                             , M.NoAction
                             )
 
@@ -244,11 +230,13 @@ mouseOnGoing r lastPoint panePoint ({ camera } as m) =
 
         M.TargetCreating handleRecord ->
             ( { m | target = M.TargetCreating { handleRecord | handle = updateHandle handleRecord.handle } }
+                |> Makie.Internal.Canvas.requestRenderEditing
             , M.NoAction
             )
 
         M.TargetEditing targetId handleRecord ->
             ( { m | target = M.TargetEditing targetId { handleRecord | handle = updateHandle handleRecord.handle } }
+                |> Makie.Internal.Canvas.requestRenderEditing
             , M.NoAction
             )
 
@@ -304,10 +292,14 @@ mouseEnd r lastPoint panePoint ({ camera } as m) =
                     ( m, M.NoAction )
 
         M.TargetCreating handleRecord ->
-            ( { m | target = M.NoTarget }, M.Add (newAnnotation handleRecord) )
+            ( { m | target = M.NoTarget } |> Makie.Internal.Canvas.requestRenderEditing, M.Add (newAnnotation handleRecord) )
 
         M.TargetEditing targetId handleRecord ->
-            ( { m | target = M.NoTarget }, M.Insert targetId (newAnnotation handleRecord) )
+            let
+                newAnt =
+                    newAnnotation handleRecord
+            in
+            ( { m | target = M.TargetSelected targetId newAnt } |> Makie.Internal.Canvas.requestRenderEditing, M.Insert targetId newAnt )
 
         M.TargetSelected _ _ ->
             -- This case should not be happened.

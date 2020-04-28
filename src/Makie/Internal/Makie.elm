@@ -6,19 +6,25 @@ module Makie.Internal.Makie exposing
     , AnnotationRecord
     , Camera(..)
     , CameraRecord
+    , Categories
     , Category(..)
-    , Contents(..)
+    , CustomLabelRecord
+    , Display
     , Event(..)
     , Gesture(..)
     , GestureHandlingStatus(..)
     , GestureModel
+    , IdGenerator(..)
     , Image(..)
     , ImageBoundingBox
     , ImagePixels
     , ImagePoint
+    , ImagePolygon
+    , ImageRectangle
     , ImageSystem
     , ImageVector
-    , Label
+    , Label(..)
+    , LabelColors
     , Makie(..)
     , MakieRecord
     , Mode(..)
@@ -32,8 +38,8 @@ module Makie.Internal.Makie exposing
     , PolygonShape
     , RectangleShape
     , ReductionRate
+    , RenderRequest(..)
     , Shape(..)
-    , SingleImageCanvasContentsRecord
     , Target(..)
     , WheelEvent(..)
     , defaultNotices
@@ -47,7 +53,6 @@ module Makie.Internal.Makie exposing
     , panePoint
     , paneVector
     , reductionRate
-    , requestRendering
     , toPanePoint
     , toPaneVector
     )
@@ -66,10 +71,10 @@ import Pixels exposing (Pixels)
 import Point2d exposing (Point2d)
 import Polygon2d exposing (Polygon2d)
 import Quantity exposing (Quantity(..), Rate(..))
+import Random.Pcg.Extended
 import Rectangle2d exposing (Rectangle2d)
 import Set exposing (Set)
 import Time exposing (Posix)
-import Uuid exposing (Uuid)
 import Vector2d exposing (Vector2d)
 
 
@@ -88,17 +93,20 @@ type alias MakieRecord =
     , annotations : ObjectContainer AnnotationRecord
     , gestureModel : GestureModel
     , defaultLabel : Maybe Label
-    , contents : Contents
+    , categories : Categories
+    , display : Display
     , renderedTime : Posix
+    , idGenerator : IdGenerator
     }
+
+
+type IdGenerator
+    = Incremental { category : Int, annotation : Int }
+    | UseUuid Random.Pcg.Extended.Seed
 
 
 type Image
     = Image { src : String, name : String, width : Int, height : Int }
-
-
-type Contents
-    = SingleImageCanvasContents SingleImageCanvasContentsRecord
 
 
 type Mode
@@ -125,7 +133,7 @@ type Event
     | WheelEventVariant WheelEvent
     | RefreshPane Posix
     | SingleImageCanvasTextureLoaded (Maybe Texture)
-    | OpenLabelEdit Uuid
+    | OpenLabelEdit String
     | SetMode Mode
 
 
@@ -178,23 +186,6 @@ type GestureHandlingStatus
 
 
 
-{- Pointer Ids, Cooling is used not to invoke gestures when multi-pointer gesture is finished but not all of pointers are OnUp-ed. -}
-{-
-   type alias Gesture =
-       { isSpaceKeyPressed : Bool
-       , penDeviceDetected : Bool
-       , status : GestureStatus
-       }
-
-
-   type GestureStatus
-       = NoGesture
-       | GestureDetectionSuspended { history : List Pointer.Event, timeStamp : Posix }
-       | GestureStart GestureType
-       | GestureOngoing GestureType
-       | GestureEnd GestureType
-
--}
 -- Actions
 
 
@@ -206,7 +197,7 @@ type Action
     | Rotate PanePoint Angle
     | Add AnnotationRecord
     | Insert String AnnotationRecord
-    | Delete String AnnotationRecord
+    | Delete String
 
 
 
@@ -240,10 +231,6 @@ type alias AnnotationRecord =
 
 type alias AnnotationHandleRecord =
     { label : Maybe Label, notices : Notices, handle : AnnotationHandle }
-
-
-type Label
-    = BelongsToCategory Uuid
 
 
 type alias Notices =
@@ -283,26 +270,6 @@ type AnnotationHandle
     | RectangleEditCorner { oppositeCorner : ImagePoint, control : ImagePoint }
 
 
-
-{-
-   type EditingAnnotationSpec
-       = EditingPointAnnotation Uuid ImagePoint -- CategoryId, {x, y}
-       | EditingRectangle RectangleAnnotationHandle -- TODO: ここでハンドルが来るのはおかしい
-
-
-   type RectangleAnnotationHandle
-       = RectangleMoveHandle { start : ImagePoint, control : ImagePoint, original : ImageRectangle }
-       | RectangleCornerHandle { anchor : ImagePoint, control : ImagePoint }
-
--}
-
-
-type Category
-    = CategoryRoot (List Category)
-    | CategoryNode Uuid String Color (List Category)
-    | CategoryLeaf Uuid String Color
-
-
 type alias AnnotationOptions =
     { point : PointAnnotationOptions }
 
@@ -312,22 +279,59 @@ type alias PointAnnotationOptions =
 
 
 
+-- Labels
+
+
+type Label
+    = BelongsToCategory String
+    | CustomLabel CustomLabelRecord
+
+
+type alias CustomLabelRecord =
+    { name : String
+    , colors : LabelColors
+    }
+
+
+type alias LabelColors =
+    { lineColor : Color
+    , selectedLineColor : Color
+    , fillColor : Color
+    , selectedFillColor : Color
+    }
+
+
+type alias Categories =
+    {}
+
+
+type Category
+    = CategoryRoot (List Category)
+    | CategoryNode String String Color (List Category)
+    | CategoryLeaf String String Color
+
+
+
 -- View
 -- Canvas
 
 
-type alias SingleImageCanvasContentsRecord =
+type alias Display =
     { texture : Maybe Texture
     , src : String
-    , renderables : List Renderable
-    , isRenderingRequested : Bool
+    , images : List Renderable
+    , annotations : List Renderable
+    , editing : List Renderable
+    , request : RenderRequest
     }
 
 
-requestRendering : MakieRecord -> MakieRecord
-requestRendering m =
-    -- TODO : Renderするものを調整できるようにする.
-    m
+type RenderRequest
+    = NotNecessary
+    | RenderImages
+    | RenderEditing
+    | RenderAnnotations
+    | RenderAll
 
 
 

@@ -1,5 +1,6 @@
 module Makie.Internal.ObjectContainer exposing
-    ( getIndicesTouched
+    ( get
+    , getIndicesTouched
     , getLinerQuaternaryTreeIndex
     , getQuadKey
     , insert
@@ -28,6 +29,11 @@ objectContainer { depth, unitSize } =
     , depth = depth
     , unitSize = unitSize
     }
+
+
+get : String -> M.ObjectContainer o -> Maybe o
+get key { objects } =
+    Dict.get key objects |> Maybe.map .object
 
 
 insert : String -> M.ImageBoundingBox -> o -> M.ObjectContainer o -> M.ObjectContainer o
