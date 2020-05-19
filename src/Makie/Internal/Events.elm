@@ -22,10 +22,10 @@ interpret event ({ camera } as m) =
             let
                 zoomRatio =
                     if ev.deltaY < 0 then
-                        2
+                        1.25
 
                     else
-                        0.5
+                        0.8
 
                 newReductionRate =
                     Quantity.multiplyBy zoomRatio camera.reductionRate
@@ -57,9 +57,6 @@ interpretPointerEvents event ({ gestureModel, paneWidth, paneHeight } as mRecord
     let
         ( newGestureModel, gesture ) =
             Gestures.update event gestureModel
-
-        _ =
-            Debug.log "gesture & status" ( gesture, newGestureModel )
 
         m =
             { mRecord | gestureModel = newGestureModel }
@@ -111,7 +108,6 @@ mouseStart r panePoint ({ camera } as m) =
               }
                 |> Makie.Internal.Canvas.requestRenderAnnotations
                 |> Makie.Internal.Canvas.requestRenderEditing
-                |> Debug.log "start annotations"
             , M.NoAction
             )
     in

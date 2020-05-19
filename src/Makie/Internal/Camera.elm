@@ -22,7 +22,8 @@ zoom : M.PanePoint -> M.ReductionRate -> M.CameraRecord -> M.CameraRecord
 zoom panePoint newReductionRate r =
     let
         ratio =
-            Quantity.ratio newReductionRate r.reductionRate
+            -- Quantity.ratio newReductionRate r.reductionRate
+            Quantity.ratio r.reductionRate newReductionRate
 
         zoomPointToImageOrigin =
             Vector2d.from panePoint (M.toPanePoint r.reductionRate r.imageFrame Point2d.origin)

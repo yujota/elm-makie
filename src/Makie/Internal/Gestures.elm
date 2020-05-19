@@ -65,9 +65,6 @@ update event model =
                     let
                         panePoint =
                             offsetPosAsPanePoint e
-
-                        _ =
-                            Debug.log "mouse move" ( lastPosition, panePoint )
                     in
                     ( { model | status = M.HandlingMouse { r | lastPosition = panePoint } }
                     , M.MouseOnGoing { shiftKey = shiftKey, spaceKey = spaceKey } lastPosition panePoint

@@ -9,25 +9,34 @@ module Makie.Internal.Canvas exposing
     , textureLoaded
     )
 
-import Angle
+import Angle exposing (Angle)
 import Canvas as C
 import Canvas.Settings as CSettings
 import Canvas.Settings.Advanced as CAdvanced
 import Canvas.Settings.Line as CLine
 import Canvas.Texture exposing (Texture)
 import Color exposing (Color)
+import Dict
 import Makie.Internal.Annotations as Annotations
 import Makie.Internal.Labels as Labels
 import Makie.Internal.Makie as M
-import Pixels
-import Point2d
+import Pixels exposing (Pixels)
+import Point2d exposing (Point2d)
 import Quantity
-import Rectangle2d
+import Rectangle2d exposing (Rectangle2d)
 
 
-initDisplay : { src : String } -> M.Display
-initDisplay { src } =
-    { texture = Nothing, src = src, images = [], annotations = [], editing = [], request = M.NotNecessary }
+initDisplay : { src : String, paneWidth : Int, paneHeight : Int } -> M.Display
+initDisplay { src, paneWidth, paneHeight } =
+    { texture = Nothing
+    , src = src
+    , images = []
+    , annotations = []
+    , editing = []
+    , background =
+        [ C.shapes [ CSettings.fill Color.black ] [ C.rect ( 0, 0 ) (toFloat paneWidth) (toFloat paneHeight) ] ]
+    , request = M.NotNecessary
+    }
 
 
 render : M.MakieRecord -> M.MakieRecord
@@ -81,10 +90,17 @@ renderLoop requestType ({ camera, target, display, categories } as m) =
 
 
 renderAnnotations : M.MakieRecord -> M.Display
-renderAnnotations ({ display, annotations, paneWidth, paneHeight, camera, categories, target } as m) =
+renderAnnotations ({ display, annotations, paneWidth, paneHeight, imageWidth, imageHeight, camera, categories, target } as m) =
     let
         _ =
-            Debug.log "renderAnnotations iscalled" target
+            Debug.log "area" <|
+                Annotations.visibleArea
+                    { paneWidth = toFloat paneWidth
+                    , paneHeight = toFloat paneHeight
+                    , imageWidth = toFloat imageWidth
+                    , imageHeight = toFloat imageHeight
+                    }
+                    camera
 
         rdr =
             case target of
@@ -118,7 +134,14 @@ renderAnnotations ({ display, annotations, paneWidth, paneHeight, camera, catego
                         else
                             renderAnnotation False camera categories a
     in
-    Annotations.visibleItems { paneWidth = toFloat paneWidth, paneHeight = toFloat paneHeight } camera annotations
+    {-
+       Dict.toList annotations.objects
+           |> List.map (Tuple.mapSecond .object)
+           -- Annotations.visibleItems { paneWidth = toFloat paneWidth, paneHeight = toFloat paneHeight } camera annotations
+           |> List.concatMap rdr
+           |> (\l -> { display | annotations = l })
+    -}
+    Annotations.visibleItems { paneWidth = toFloat paneWidth, paneHeight = toFloat paneHeight, imageWidth = toFloat imageWidth, imageHeight = toFloat imageHeight } camera annotations
         |> List.concatMap rdr
         |> (\l -> { display | annotations = l })
 
@@ -199,7 +222,8 @@ renderImage camera t =
             camera.angle |> Angle.inRadians
 
         scale =
-            Quantity.ratio camera.reductionRate (M.reductionRate 1)
+            -- Quantity.ratio camera.reductionRate (M.reductionRate 1)
+            Quantity.ratio (M.reductionRate 1) camera.reductionRate
     in
     C.texture
         [ CAdvanced.transform
@@ -267,7 +291,8 @@ renderPointAnnotation : { color : Color, radius : Float } -> M.CameraRecord -> M
 renderPointAnnotation { color, radius } camera { point } =
     let
         { x, y } =
-            M.toPanePoint camera.reductionRate camera.imageFrame point |> Point2d.toPixels
+            M.toPanePoint camera.reductionRate camera.imageFrame point
+                |> Point2d.toPixels
     in
     C.shapes [ CSettings.fill color ] [ C.circle ( x, y ) radius ] |> List.singleton
 
@@ -286,7 +311,10 @@ renderRectangleAnnotation opt camera { rectangle } =
             Rectangle2d.vertices paneRectangle |> List.map (Point2d.toTuple Pixels.inPixels)
 
         topLeft =
-            List.head vertices |> Maybe.withDefault ( 0, 0 )
+            getTopLeft camera.angle paneRectangle |> Point2d.toPixels
+
+        degrees =
+            camera.angle |> Angle.inRadians
 
         ( width, height ) =
             Rectangle2d.dimensions paneRectangle |> Tuple.mapBoth Pixels.inPixels Pixels.inPixels
@@ -296,9 +324,13 @@ renderRectangleAnnotation opt camera { rectangle } =
                 [ CSettings.fill opt.fillColor
                 , CSettings.stroke opt.lineColor
                 , CLine.lineWidth opt.lineWidth
-                , CAdvanced.transform [ CAdvanced.rotate (Angle.inRadians camera.angle) ]
+                , CAdvanced.transform
+                    [ CAdvanced.translate topLeft.x topLeft.y
+                    , CAdvanced.rotate degrees
+                    ]
                 ]
-                [ C.rect topLeft width height ]
+                -- [ C.rect ( -0.5 * width, -0.5 * height ) width height ]
+                [ C.rect ( 0, 0 ) width height ]
 
         cornerPoint t =
             C.shapes [ CSettings.fill opt.lineColor ] [ C.circle t opt.cornerPointRadius ]
@@ -313,3 +345,18 @@ renderRectangleAnnotation opt camera { rectangle } =
 
 predefinedSettings =
     { raLineWidth = 3, raCornerPointRadius = 3, paRadius = 3, paRadiusSelected = 5 }
+
+
+getTopLeft : Angle -> Rectangle2d Pixels a -> Point2d Pixels a
+getTopLeft angle rect =
+    let
+        calcScore p =
+            -- Canceling rotation and lowest score of x + y would be top left corner
+            Point2d.rotateAround Point2d.origin (Quantity.negate angle) p
+                |> Point2d.toPixels
+                |> (\r -> r.x + r.y)
+    in
+    Rectangle2d.vertices rect
+        |> List.sortBy calcScore
+        |> List.head
+        |> Maybe.withDefault Point2d.origin

@@ -1,45 +1,26 @@
 module Makie.Internal.Annotations exposing
-    ( getHandle
+    ( boundingBox
+    , getHandle
     , getTouched
-    , insert
     , isTouched
     , isVisible
-    , pop
     , shapeTo
     , startPoint
     , startRectangle
     , updateHandle
+    , visibleArea
     , visibleItems
     )
 
 import Array
 import BoundingBox2d
+import CollisionDetection2d
 import Makie.Internal.Makie as M
-import Makie.Internal.ObjectContainer as OC
 import Point2d exposing (Point2d)
 import Polygon2d exposing (Polygon2d)
 import Quantity exposing (Quantity, Squared)
 import Rectangle2d exposing (Rectangle2d)
 import Vector2d
-
-
-
--- Action related
-
-
-insert : String -> M.AnnotationRecord -> M.MakieRecord -> M.MakieRecord
-insert key ({ shape } as ant) ({ annotations } as m) =
-    case getBoundingBox shape of
-        Just bBox ->
-            OC.insert key bBox ant annotations |> (\ants -> { m | annotations = ants })
-
-        Nothing ->
-            m
-
-
-pop : String -> M.MakieRecord -> ( Maybe M.AnnotationRecord, M.MakieRecord )
-pop key ({ annotations } as m) =
-    ( OC.get key annotations, OC.remove key annotations |> (\ants -> { m | annotations = ants }) )
 
 
 
@@ -49,28 +30,50 @@ pop key ({ annotations } as m) =
 getTouched :
     M.ImagePixels
     -> M.ImagePoint
-    -> M.ObjectContainer M.AnnotationRecord
+    -> CollisionDetection2d.Container String M.AnnotationRecord M.ImageBoundingBox
     -> Maybe ( String, M.AnnotationRecord )
 getTouched tolerance imagePoint container =
-    BoundingBox2d.withDimensions ( tolerance, tolerance ) imagePoint
-        |> (\b -> OC.touched (.shape >> isTouched tolerance imagePoint) b container)
-        |> List.sortBy (Tuple.second >> .shape >> roughSize)
+    CollisionDetection2d.collideWith
+        (.shape >> isTouched tolerance imagePoint)
+        (BoundingBox2d.withDimensions ( tolerance, tolerance ) imagePoint)
+        container
+        |> List.sortBy (.object >> .shape >> roughSize)
         |> List.head
+        |> Maybe.map (\r -> ( r.key, r.object ))
 
 
 visibleItems :
-    { paneWidth : Float, paneHeight : Float }
+    { paneWidth : Float, paneHeight : Float, imageWidth : Float, imageHeight : Float }
     -> M.CameraRecord
-    -> M.ObjectContainer M.AnnotationRecord
+    -> CollisionDetection2d.Container String M.AnnotationRecord M.ImageBoundingBox
     -> List ( String, M.AnnotationRecord )
-visibleItems { paneWidth, paneHeight } camera container =
+visibleItems { paneWidth, paneHeight, imageWidth, imageHeight } camera container =
     let
         cameraArea =
             Rectangle2d.from Point2d.origin (Point2d.pixels paneWidth paneHeight)
                 |> Rectangle2d.relativeTo camera.imageFrame
                 |> Rectangle2d.at camera.reductionRate
+
+        searchArea =
+            visibleArea
+                { paneWidth = paneWidth
+                , paneHeight = paneHeight
+                , imageWidth = imageWidth
+                , imageHeight = imageHeight
+                }
+                camera
     in
-    OC.touched (.shape >> isVisibleLogic cameraArea) (Rectangle2d.boundingBox cameraArea) container
+    CollisionDetection2d.collideWith (.shape >> isVisibleLogic cameraArea) (Rectangle2d.boundingBox cameraArea) container
+        |> List.map (\r -> ( r.key, r.object ))
+
+
+
+{-
+   -- OC.touched (.shape >> isVisibleLogic cameraArea) (Rectangle2d.boundingBox cameraArea) container
+
+   -- OC.touched (.shape >> isVisibleLogic searchArea) (Rectangle2d.boundingBox cameraArea) container
+   OC.touched (always True) (Rectangle2d.boundingBox cameraArea) container
+-}
 
 
 isVisible : M.MakieRecord -> M.AnnotationRecord -> Bool
@@ -82,19 +85,6 @@ isVisible { camera, paneWidth, paneHeight } { shape } =
                 |> Rectangle2d.at camera.reductionRate
     in
     isVisibleLogic cameraArea shape
-
-
-isVisibleLogic : M.ImageRectangle -> M.Shape -> Bool
-isVisibleLogic r s =
-    case s of
-        M.Point { point } ->
-            Rectangle2d.contains point r
-
-        M.Rectangle rectangleShape ->
-            detectCollisionRect rectangleShape.rectangle r
-
-        M.Polygon polygonShape ->
-            detectCollisionPolygon r polygonShape.polygon
 
 
 getHandle : M.ImagePixels -> M.ImagePoint -> M.Shape -> Maybe M.AnnotationHandle
@@ -165,6 +155,11 @@ startPoint imagePoint =
 startRectangle : M.ImagePoint -> M.AnnotationHandle
 startRectangle imagePoint =
     M.RectangleEditCorner { oppositeCorner = imagePoint, control = imagePoint }
+
+
+boundingBox : M.AnnotationRecord -> M.ImageBoundingBox
+boundingBox { shape } =
+    getBoundingBox shape
 
 
 
@@ -244,17 +239,17 @@ getRectangleHandleMove _ point r =
         Nothing
 
 
-getBoundingBox : M.Shape -> Maybe M.ImageBoundingBox
+getBoundingBox : M.Shape -> M.ImageBoundingBox
 getBoundingBox shape =
     case shape of
         M.Point pointShape ->
-            BoundingBox2d.withDimensions ( M.imagePixels 1, M.imagePixels 1 ) pointShape.point |> Just
+            BoundingBox2d.withDimensions ( M.imagePixels 1, M.imagePixels 1 ) pointShape.point
 
         M.Rectangle rectangleShape ->
-            Rectangle2d.boundingBox rectangleShape.rectangle |> Just
+            Rectangle2d.boundingBox rectangleShape.rectangle
 
         M.Polygon polygonShape ->
-            Polygon2d.boundingBox polygonShape.polygon
+            polygonShape.boundingBox
 
 
 
@@ -287,3 +282,37 @@ detectCollisionLoop l =
 
         [] ->
             False
+
+
+isVisibleLogic : M.ImageRectangle -> M.Shape -> Bool
+isVisibleLogic r s =
+    case s of
+        M.Point { point } ->
+            Rectangle2d.contains point r
+
+        M.Rectangle rectangleShape ->
+            detectCollisionRect rectangleShape.rectangle r
+
+        M.Polygon polygonShape ->
+            detectCollisionPolygon r polygonShape.polygon
+
+
+visibleArea :
+    { paneWidth : Float, paneHeight : Float, imageWidth : Float, imageHeight : Float }
+    -> M.CameraRecord
+    -> M.ImageRectangle
+visibleArea { paneWidth, paneHeight, imageWidth, imageHeight } camera =
+    let
+        cameraArea =
+            Rectangle2d.from Point2d.origin (Point2d.pixels paneWidth paneHeight)
+                |> Rectangle2d.relativeTo camera.imageFrame
+                |> Rectangle2d.at camera.reductionRate
+
+        imageArea =
+            Rectangle2d.from Point2d.origin (M.imagePoint { x = imageWidth, y = imageHeight })
+    in
+    if List.all (\p -> Rectangle2d.contains p cameraArea) (Rectangle2d.vertices imageArea) then
+        imageArea
+
+    else
+        cameraArea

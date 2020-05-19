@@ -12,7 +12,7 @@ textures (M.Makie { display }) lifter =
 
 renderables : Makie -> List Renderable
 renderables (M.Makie { display }) =
-    display.images ++ display.annotations ++ display.editing
+    display.background ++ display.images ++ display.annotations ++ display.editing
 
 
 render : Makie -> Makie

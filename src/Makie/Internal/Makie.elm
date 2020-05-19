@@ -29,7 +29,6 @@ module Makie.Internal.Makie exposing
     , MakieRecord
     , Mode(..)
     , Notices
-    , ObjectContainer
     , PanePoint
     , PaneSystem
     , PaneVector
@@ -62,6 +61,7 @@ import Array exposing (Array)
 import BoundingBox2d exposing (BoundingBox2d)
 import Canvas exposing (Renderable)
 import Canvas.Texture exposing (Texture)
+import CollisionDetection2d
 import Color exposing (Color)
 import Dict exposing (Dict)
 import Frame2d exposing (Frame2d)
@@ -90,7 +90,7 @@ type alias MakieRecord =
     , paneHeight : Int
     , imageWidth : Int
     , imageHeight : Int
-    , annotations : ObjectContainer AnnotationRecord
+    , annotations : CollisionDetection2d.Container String AnnotationRecord ImageBoundingBox
     , gestureModel : GestureModel
     , defaultLabel : Maybe Label
     , categories : Categories
@@ -256,7 +256,7 @@ type alias RectangleShape =
 
 
 type alias PolygonShape =
-    { polygon : ImagePolygon }
+    { polygon : ImagePolygon, boundingBox : ImageBoundingBox }
 
 
 type Notice
@@ -322,6 +322,7 @@ type alias Display =
     , images : List Renderable
     , annotations : List Renderable
     , editing : List Renderable
+    , background : List Renderable
     , request : RenderRequest
     }
 
@@ -473,15 +474,3 @@ reductionRate n =
 inReductionRate : Quantity Float ReductionRateUnit -> Float
 inReductionRate (Quantity n) =
     n
-
-
-
--- Helpers
-
-
-type alias ObjectContainer o =
-    { linerQuaternaryTree : Array (Set String) -- Hashtable for (Morton Order -> Annotation Id)
-    , objects : Dict String { index : Int, object : o, boundingBox : ImageBoundingBox }
-    , depth : Int
-    , unitSize : Int
-    }

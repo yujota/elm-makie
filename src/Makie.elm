@@ -2,18 +2,23 @@ module Makie exposing
     ( Event
     , Makie
     , apply
+    , browseMode
     , interpret
     , makie
     , paneHeight
     , paneWidth
+    , pointAnnotationMode
+    , rectangleAnnotationMode
     , refreshPane
     , subscriptions
     , update
     , view
     )
 
+import BoundingBox2d
 import Browser.Events exposing (onAnimationFrame)
 import Canvas
+import CollisionDetection2d
 import Color
 import Html exposing (Html)
 import Html.Attributes
@@ -26,7 +31,6 @@ import Makie.Internal.Events
 import Makie.Internal.Gestures
 import Makie.Internal.Labels
 import Makie.Internal.Makie as M
-import Makie.Internal.ObjectContainer
 import Prng.Uuid
 import Random.Pcg.Extended
 import Time exposing (Posix)
@@ -50,23 +54,28 @@ type alias IdGenerator =
 
 makie : { src : String, width : Int, height : Int, name : String } -> Makie
 makie r =
+    let
+        ( iWidth, iHeight ) =
+            ( r.width, r.height )
+
+        ( pWidth, pHeight ) =
+            ( 640 * 2, 480 * 2 )
+    in
     M.Makie
         { camera =
             Makie.Internal.Camera.camera
-                { imageWidth = r.width
-                , imageHeight = r.height
-                , paneWidth = 640
-                , paneHeight = 480
+                { imageWidth = iWidth
+                , imageHeight = iHeight
+                , paneWidth = pWidth
+                , paneHeight = pHeight
                 }
         , target = M.NoTarget
-
-        -- , mode = M.BrowseMode
-        , mode = M.PointMode
+        , mode = M.BrowseMode
         , imageWidth = r.width
         , imageHeight = r.height
-        , paneWidth = 640
-        , paneHeight = 480
-        , annotations = Makie.Internal.ObjectContainer.objectContainer { depth = 4, unitSize = 256 }
+        , paneWidth = pWidth
+        , paneHeight = pHeight
+        , annotations = emptyAnnotationContainer (toFloat iWidth) (toFloat iHeight)
         , gestureModel = Makie.Internal.Gestures.gestureModel
 
         -- , defaultLabel = Nothing
@@ -77,7 +86,7 @@ makie r =
                 }
                 |> Just
         , categories = Makie.Internal.Labels.emptyCategories
-        , display = Makie.Internal.Canvas.initDisplay { src = r.src }
+        , display = Makie.Internal.Canvas.initDisplay { src = r.src, paneWidth = pWidth, paneHeight = pHeight }
         , renderedTime = Time.millisToPosix 0
         , idGenerator = incrementalIdGenerator { initialCategoryId = 0, initialAnnotationId = 0 }
         }
@@ -99,44 +108,45 @@ interpret e (M.Makie r) =
 
 
 apply : Action -> Makie -> Makie
-apply a ((M.Makie r) as m) =
-    case Debug.log "action" a of
-        -- case a of
+apply a (M.Makie m) =
+    -- case Debug.log "action" a of
+    case a of
         M.NoAction ->
-            m
+            M.Makie m
 
         M.Batch actions ->
-            List.foldl (\ac mak -> apply ac mak) m actions
+            List.foldl (\ac mak -> apply ac mak) (M.Makie m) actions
 
         M.Move paneVector ->
-            Makie.Internal.Camera.move paneVector r.camera
-                |> (\c -> { r | camera = c })
+            Makie.Internal.Camera.move paneVector m.camera
+                |> (\c -> { m | camera = c })
                 |> Makie.Internal.Canvas.requestRendering
                 |> M.Makie
 
         M.Zoom panePoint reductionRate ->
-            Makie.Internal.Camera.zoom panePoint reductionRate r.camera
-                |> (\c -> { r | camera = c })
+            Makie.Internal.Camera.zoom panePoint reductionRate m.camera
+                |> (\c -> { m | camera = c })
                 |> Makie.Internal.Canvas.requestRendering
                 |> M.Makie
 
         M.Rotate panePoint angle ->
-            Makie.Internal.Camera.rotate panePoint angle r.camera
-                |> (\c -> { r | camera = c })
+            Makie.Internal.Camera.rotate panePoint angle m.camera
+                |> (\c -> { m | camera = c })
                 |> Makie.Internal.Canvas.requestRendering
                 |> M.Makie
 
         M.Add annotationRecord ->
             let
                 ( key, mki ) =
-                    generateNewId True r
+                    generateNewId True m
             in
             apply (M.Insert key annotationRecord) (M.Makie mki)
 
         M.Insert key annotationRecord ->
-            Makie.Internal.Annotations.insert key annotationRecord r
+            { m | annotations = CollisionDetection2d.insert key annotationRecord m.annotations }
                 |> (\mki ->
                         if Makie.Internal.Annotations.isVisible mki annotationRecord then
+                            -- TODO 古いアノテーションが存在していれば.. それらを消す必要がある.
                             mki |> Makie.Internal.Canvas.requestRenderAnnotations |> M.Makie
 
                         else
@@ -144,16 +154,13 @@ apply a ((M.Makie r) as m) =
                    )
 
         M.Delete key ->
-            case Makie.Internal.Annotations.pop key r of
-                ( Just ant, mki ) ->
-                    if Makie.Internal.Annotations.isVisible mki ant then
-                        mki |> Makie.Internal.Canvas.requestRenderAnnotations |> M.Makie
+            (\mki -> M.Makie { mki | annotations = CollisionDetection2d.remove key mki.annotations }) <|
+                case Maybe.map (Makie.Internal.Annotations.isVisible m) (CollisionDetection2d.get key m.annotations) of
+                    Just True ->
+                        m |> Makie.Internal.Canvas.requestRenderAnnotations
 
-                    else
-                        mki |> M.Makie
-
-                _ ->
-                    m
+                    _ ->
+                        m
 
 
 refreshPane : Posix -> Event
@@ -179,6 +186,11 @@ browseMode =
 pointAnnotationMode : Makie -> Makie
 pointAnnotationMode =
     setMode M.PointMode
+
+
+rectangleAnnotationMode : Makie -> Makie
+rectangleAnnotationMode =
+    setMode M.RectangleMode
 
 
 
@@ -227,3 +239,38 @@ generateNewId isAnnotationId ({ idGenerator } as m) =
 setMode : M.Mode -> M.Makie -> M.Makie
 setMode mode (M.Makie r) =
     M.Makie { r | mode = mode }
+
+
+emptyAnnotationContainer : Float -> Float -> CollisionDetection2d.Container String M.AnnotationRecord M.ImageBoundingBox
+emptyAnnotationContainer imageWidth imageHeight =
+    CollisionDetection2d.quadTree
+        { extrema =
+            BoundingBox2d.extrema
+                >> (\r ->
+                        { minX = M.inImagePixels r.minX
+                        , minY = M.inImagePixels r.minY
+                        , maxX = M.inImagePixels r.maxX
+                        , maxY = M.inImagePixels r.maxY
+                        }
+                   )
+        , intersects = BoundingBox2d.intersects
+        , getBoundingBox = Makie.Internal.Annotations.boundingBox
+        , boundary = { minX = 0, minY = 0, maxX = imageWidth, maxY = imageHeight }
+        }
+
+
+emptyAnnotationContainer2 : Float -> Float -> CollisionDetection2d.Container String M.AnnotationRecord M.ImageBoundingBox
+emptyAnnotationContainer2 imageWidth imageHeight =
+    CollisionDetection2d.naive
+        { extrema =
+            BoundingBox2d.extrema
+                >> (\r ->
+                        { minX = M.inImagePixels r.minX
+                        , minY = M.inImagePixels r.minY
+                        , maxX = M.inImagePixels r.maxX
+                        , maxY = M.inImagePixels r.maxY
+                        }
+                   )
+        , intersects = BoundingBox2d.intersects
+        , getBoundingBox = Makie.Internal.Annotations.boundingBox
+        }
